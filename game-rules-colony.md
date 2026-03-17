@@ -1,9 +1,4 @@
 # Colony Docs – Complete Single Manual
-
-**Source:** https://docs.playcolony.xyz (scraped March 2025)  
-**Game:** Colony – a fully onchain financial game on Solana  
-**Current Season:** Season 0 (one-week seasons with soft resets)
-
 ## Table of Contents
 
 - [Getting Started](#getting-started)
@@ -22,8 +17,6 @@
   - [Staking](#staking)
 - [Planets](#planets)
 - [Items](#items)
-
----
 
 ## Getting Started
 
