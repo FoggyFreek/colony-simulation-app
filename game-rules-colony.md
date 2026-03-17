@@ -440,9 +440,3 @@ At the end of each season, players can purchase permanent items from the Galacti
 
 Items are purchased at the end of each season. You can also earn them from Star Chests via staking.
 
----
-
-**End of Manual.**  
-All pages have been included. Internal links point to the correct sections above. Enjoy Colony! 🚀
-
-If you need a PDF version, updates, or anything else, just let me know.
