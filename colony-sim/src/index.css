@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-surface: #1f2937;
+  --color-inset: #111827;
+  --color-border-default: #374151;
+  --color-border-hover: #4b5563;
+  --color-muted: #9ca3af;
+  --color-faint: #6b7280;
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #14b8a6;
+}
+
+/* ── Dark theme (default) ── */
+:root {
+  --color-bg: #111827;
+  --color-surface: #1f2937;
+  --color-inset: #111827;
+  --color-border: #374151;
+  --color-border-hover: #4b5563;
+  --color-text: #f3f4f6;
+  --color-muted: #9ca3af;
+  --color-faint: #6b7280;
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #14b8a6;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-card-lg: 0 4px 12px rgba(0,0,0,0.4);
+  --color-danger-bg: rgba(239,68,68,0.12);
+  --color-danger-border: #7f1d1d;
+  --color-danger-text: #fca5a5;
+  --color-wakeup-bg: rgba(16,185,129,0.1);
+  --color-tooltip-bg: #1e293b;
+  --color-tooltip-border: #334155;
+  --color-grid-stroke: #1e293b;
+  --color-axis-stroke: #475569;
+  --color-axis-tick: #64748b;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --color-bg: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-inset: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-border-hover: #cbd5e1;
+  --color-text: #1e293b;
+  --color-muted: #64748b;
+  --color-faint: #94a3b8;
+  --color-accent: #0d9488;
+  --color-accent-hover: #0f766e;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-card-lg: 0 4px 12px rgba(0,0,0,0.1);
+  --color-danger-bg: rgba(239,68,68,0.06);
+  --color-danger-border: #fecaca;
+  --color-danger-text: #dc2626;
+  --color-wakeup-bg: rgba(16,185,129,0.06);
+  --color-tooltip-bg: #ffffff;
+  --color-tooltip-border: #e2e8f0;
+  --color-grid-stroke: #e2e8f0;
+  --color-axis-stroke: #cbd5e1;
+  --color-axis-tick: #94a3b8;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: background 0.25s, color 0.25s;
+}
+
+/* ── Tier badges (kept as custom classes — complex color combos) ── */
+.tier-explorer { background: #fbbf24; color: #000; }
+.tier-diamond { background: #60a5fa; color: #000; }
+.tier-platinum { background: #a78bfa; color: #000; }
+.tier-gold { background: #f59e0b; color: #000; }
+.tier-silver { background: #94a3b8; color: #000; }
+.tier-bronze { background: #b45309; color: #fff; }
+
+/* ── Toggle switch (pseudo-element based — keep as CSS) ── */
+.toggle-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: var(--color-border);
+  border-radius: 11px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-muted);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+input:checked + .toggle-switch {
+  background: #10b981;
+}
+input:checked + .toggle-switch::after {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+/* ── Keyframe animation ── */
+@keyframes warningFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
