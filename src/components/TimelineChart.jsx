@@ -1,5 +1,6 @@
 import {
-  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LineChart, Line, AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 
 function formatNumber(val) {
@@ -28,7 +29,34 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-export default function TimelineChart({ data, lines, yLabel, stacked }) {
+export default function TimelineChart({ data, lines, yLabel, stacked, bar }) {
+  if (bar) {
+    return (
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-grid-stroke)" />
+          <XAxis
+            dataKey="hour"
+            stroke="var(--color-axis-stroke)"
+            tick={{ fill: 'var(--color-axis-tick)', fontSize: 11 }}
+            label={{ value: 'Hours', position: 'insideBottom', offset: -2, fill: 'var(--color-axis-tick)', fontSize: 11 }}
+          />
+          <YAxis
+            stroke="var(--color-axis-stroke)"
+            tick={{ fill: 'var(--color-axis-tick)', fontSize: 11 }}
+            tickFormatter={formatNumber}
+            label={{ value: yLabel, angle: -90, position: 'insideLeft', fill: 'var(--color-axis-tick)', fontSize: 11 }}
+          />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
+          {lines.map(l => (
+            <Bar key={l.key} dataKey={l.key} stackId="1" fill={l.color} name={l.name} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+
   if (stacked) {
     return (
       <ResponsiveContainer width="100%" height={250}>

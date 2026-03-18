@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import { buildAgenda, formatAgendaAsText, formatAgendaAsICS, formatDayHeader, getNextFriday16 } from '../simulation/agendaUtils';
+import ActionIcon from './ActionIcon';
 
-export default function AgendaExport({ actionLog, timeline, scenario, saveEnergy }) {
+export default function AgendaExport({ actionLog, timeline, miningByHour = [], scenario, saveEnergy }) {
   const [seasonStart, setSeasonStart] = useState(() => getNextFriday16());
   const [awakeEnabled, setAwakeEnabled] = useState(true);
   const [awakeStart, setAwakeStart] = useState(7);
@@ -15,8 +16,8 @@ export default function AgendaExport({ actionLog, timeline, scenario, saveEnergy
   }), [awakeEnabled, awakeStart, awakeEnd]);
 
   const entries = useMemo(
-    () => buildAgenda(actionLog, timeline, seasonStart, awakeConfig, { saveEnergy }),
-    [actionLog, timeline, seasonStart, awakeConfig, saveEnergy],
+    () => buildAgenda(actionLog, timeline, seasonStart, awakeConfig, { saveEnergy, miningByHour }),
+    [actionLog, timeline, miningByHour, seasonStart, awakeConfig, saveEnergy],
   );
 
   const textExport = useMemo(
@@ -200,7 +201,12 @@ export default function AgendaExport({ actionLog, timeline, scenario, saveEnergy
                 </span>
                 <div className="flex flex-col gap-px">
                   {entry.actions.map((action, j) => (
-                    <div key={j} className="text-[var(--color-text)]">{action}</div>
+                    <div key={j} className="flex items-center gap-1.5">
+                      <span className="w-4 shrink-0 flex items-center justify-center">
+                        <ActionIcon action={action} />
+                      </span>
+                      <span className="text-[var(--color-text)]">{action}</span>
+                    </div>
                   ))}
                 </div>
               </div>

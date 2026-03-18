@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { simulate } from './simulation/engine';
 import { SCENARIOS } from './simulation/strategies';
-import { SEASON_HOURS } from './simulation/gameConstants';
+import { SEASON_HOURS, TRADE_RATIO_AMPLITUDE, TRADE_RATIO_CENTER } from './simulation/gameConstants';
 import { createCustomStrategy } from './simulation/customStrategy';
 import TimelineChart from './components/TimelineChart';
 import ActionLog from './components/ActionLog';
@@ -52,7 +52,8 @@ const CHART_PANELS = [
     yLabel: 'Points',
     stacked: true,
     lines: [
-      { key: 'resourcePoints', color: '#f59e0b', name: 'Resources Gathered' },
+      { key: 'productionPoints', color: '#f59e0b', name: 'Planet Production' },
+      { key: 'miningPoints', color: '#fb923c', name: 'Mining Activity' },
       { key: 'stardustPoints', color: '#8b5cf6', name: 'Stardust Gathered' },
       { key: 'buildingBuiltPoints', color: '#10b981', name: 'Buildings Built' },
       { key: 'buildingUpgradePoints', color: '#3b82f6', name: 'Buildings Upgraded' },
@@ -94,6 +95,7 @@ function App() {
   });
   const [starPrice, setStarPrice] = useState('0.09');
   const [solPrice, setSolPrice] = useState('94');
+  const [tradeRatioAmplitude, setTradeRatioAmplitude] = useState(TRADE_RATIO_AMPLITUDE);
   const [customActionQueue, setCustomActionQueue] = useState(() => {
     try {
       const saved = localStorage.getItem('colony-custom-queue');
@@ -117,7 +119,7 @@ function App() {
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   const results = useMemo(() => {
-    const opts = { saveEnergyBeforeUpgrade: saveEnergy };
+    const opts = { saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude };
     const r = {};
     for (const scenario of SCENARIOS) {
       r[scenario.id] = simulate(scenario.strategy, seed, opts);
@@ -126,7 +128,7 @@ function App() {
       r['custom'] = simulate(createCustomStrategy(customActionQueue), seed, opts);
     }
     return r;
-  }, [seed, saveEnergy, customActionQueue]);
+  }, [seed, saveEnergy, customActionQueue, tradeRatioAmplitude]);
 
   const active = ALL_SCENARIOS.find(s => s.id === activeScenario) || ALL_SCENARIOS[0];
   const activeResult = results[activeScenario];
@@ -134,6 +136,11 @@ function App() {
   const chartData = useMemo(() => {
     if (!activeResult) return [];
     return sampleTimeline(activeResult.timeline);
+  }, [activeResult]);
+
+  const miningChartData = useMemo(() => {
+    if (!activeResult) return [];
+    return activeResult.miningByHour;
   }, [activeResult]);
 
   return (
@@ -250,12 +257,76 @@ function App() {
         {activeResult && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {CHART_PANELS.map(panel => (
-                <div key={panel.title} className={CHART_CARD_CLASS}>
-                  <h3 className="text-sm text-[var(--color-muted)] mb-3">{panel.title}</h3>
-                  <TimelineChart data={chartData} lines={panel.lines} yLabel={panel.yLabel} stacked={panel.stacked} />
-                </div>
-              ))}
+              {CHART_PANELS.map(panel => {
+                const isTradeRatios = panel.title === 'Trade Ratios (Metal →)';
+                const tradeMin = TRADE_RATIO_CENTER - tradeRatioAmplitude;
+                const tradeMax = TRADE_RATIO_CENTER + tradeRatioAmplitude;
+                const MAX_AMP = TRADE_RATIO_CENTER - 0.3; // min floor 0.3 → max amplitude 0.7
+                return (
+                  <div key={panel.title} className={CHART_CARD_CLASS}>
+                    <h3 className="text-sm text-[var(--color-muted)] mb-3">{panel.title}</h3>
+                    <TimelineChart data={chartData} lines={panel.lines} yLabel={panel.yLabel} stacked={panel.stacked} />
+                    {isTradeRatios && (
+                      <div className="flex flex-wrap items-center gap-3 mt-3">
+                        <label className="text-xs text-[var(--color-muted)]">Amplitude:</label>
+                        <input
+                          type="range"
+                          min={0}
+                          max={MAX_AMP}
+                          step={0.01}
+                          value={tradeRatioAmplitude}
+                          onChange={e => setTradeRatioAmplitude(Number(e.target.value))}
+                          className="w-28 accent-[var(--color-accent)]"
+                        />
+                        <span className="text-xs text-[var(--color-text)] w-8">{tradeRatioAmplitude.toFixed(2)}</span>
+                        <div className="flex items-center gap-1">
+                          <label className="text-xs text-[var(--color-muted)]">MIN:</label>
+                          <input
+                            type="number"
+                            min={0.3}
+                            max={TRADE_RATIO_CENTER}
+                            step={0.01}
+                            value={tradeMin.toFixed(2)}
+                            onChange={e => {
+                              const min = Math.max(0.3, Math.min(TRADE_RATIO_CENTER, Number(e.target.value)));
+                              setTradeRatioAmplitude(parseFloat((TRADE_RATIO_CENTER - min).toFixed(2)));
+                            }}
+                            className="bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-1.5 py-0.5 rounded w-16 text-xs focus:outline-none focus:border-[var(--color-accent)]"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <label className="text-xs text-[var(--color-muted)]">MAX:</label>
+                          <input
+                            type="number"
+                            min={TRADE_RATIO_CENTER}
+                            max={1.7}
+                            step={0.01}
+                            value={tradeMax.toFixed(2)}
+                            onChange={e => {
+                              const max = Math.min(1.7, Math.max(TRADE_RATIO_CENTER, Number(e.target.value)));
+                              setTradeRatioAmplitude(parseFloat((max - TRADE_RATIO_CENTER).toFixed(2)));
+                            }}
+                            className="bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-1.5 py-0.5 rounded w-16 text-xs focus:outline-none focus:border-[var(--color-accent)]"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div className={CHART_CARD_CLASS}>
+                <h3 className="text-sm text-[var(--color-muted)] mb-3">Mining Gains per Hour</h3>
+                <TimelineChart
+                  data={miningChartData}
+                  lines={[
+                    { key: 'metals', color: '#f59e0b', name: 'Metals' },
+                    { key: 'gas', color: '#ef4444', name: 'Gas' },
+                    { key: 'crystal', color: '#6366f1', name: 'Crystal' },
+                  ]}
+                  yLabel="Resources"
+                  bar
+                />
+              </div>
             </div>
 
             <ActionLog log={activeResult.actionLog} />
@@ -263,6 +334,7 @@ function App() {
             <AgendaExport
               actionLog={activeResult.actionLog}
               timeline={activeResult.timeline}
+              miningByHour={activeResult.miningByHour}
               scenario={active}
               saveEnergy={saveEnergy}
             />

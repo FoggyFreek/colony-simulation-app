@@ -428,6 +428,55 @@ export function strategyMaxUSD(hour, resources, buildings, production, totalBuil
   return actions;
 }
 
+// ============================================================
+// SCENARIO 5: Crystal First - Build crystal utility to L7, then
+// max out metal buildings. Crystal is required for metal upgrades
+// (100K–300K crystal per level), so an L7 crystal building
+// (+47K crystal/hr) may fund metal upgrades faster than trading.
+// ============================================================
+export function strategyCrystalFirst(hour, resources, buildings, production, totalBuildings) {
+  const actions = [];
+  const crystalBuildings = buildings.crystal;
+  const metalBuildings = buildings.metal;
+
+  // Phase 1: Build crystal building and upgrade to L7
+  if (crystalBuildings.length === 0) {
+    actions.push({ type: 'trade_and_upgrade', buildingType: 'crystal', targetLevel: 1 });
+    return actions;
+  }
+
+  if (crystalBuildings[0] < 7) {
+    actions.push({
+      type: 'trade_and_upgrade',
+      buildingType: 'crystal',
+      buildingIndex: 0,
+      targetLevel: crystalBuildings[0] + 1,
+    });
+    return actions;
+  }
+
+  // Phase 2: Crystal is L7 — build metal buildings, level each to 7 before next
+  if (metalBuildings.length > 0) {
+    const lastIdx = metalBuildings.length - 1;
+    const currentLevel = metalBuildings[lastIdx];
+    if (currentLevel < 7) {
+      actions.push({
+        type: 'trade_and_upgrade',
+        buildingType: 'metal',
+        buildingIndex: lastIdx,
+        targetLevel: currentLevel + 1,
+      });
+      return actions;
+    }
+  }
+
+  if (totalBuildings < 9) {
+    actions.push({ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 });
+  }
+
+  return actions;
+}
+
 export const SCENARIOS = [
   {
     id: 'max-metal',
@@ -437,31 +486,31 @@ export const SCENARIOS = [
     color: '#f59e0b',
   },
   {
-    id: 'balanced',
-    name: 'Scenario 2: Balanced Growth',
-    description: 'Balance resource production with stardust generation. Build metal buildings and stardust for steady accumulation.',
-    strategy: strategyBalanced,
-    color: '#3b82f6',
-  },
-  {
     id: 'max-stardust',
-    name: 'Scenario 3: Stardust Rush',
+    name: 'Scenario 2: Stardust Rush',
     description: 'Accumulate maximum stardust. Only one stardust building is allowed per planet. Build metal L3 for economy, build the single stardust building, then upgrade it to L3 (+3/hr). Fill remaining slots with metal buildings.',
     strategy: strategyMaxStardust,
     color: '#8b5cf6',
   },
   {
     id: 'optimal',
-    name: 'Scenario 4: Optimal (Recommended)',
+    name: 'Scenario 3: Optimal (Recommended)',
     description: 'Aggressive early economy + early stardust + maximum building points. Designed to reach top 3% leaderboard.',
     strategy: strategyOptimal,
     color: '#10b981',
   },
   {
     id: 'max-usd',
-    name: 'Scenario 5: Max USD Value',
+    name: 'Scenario 4: Max USD Value',
     description: 'Maximize total dollar value (STAR + SOL rewards). Rush metal L7, build stardust L1 for bonus income, then continue metal rush to secure Explorer tier. Optimized for STAR=$0.092 / SOL=$95.',
     strategy: strategyMaxUSD,
     color: '#e11d48',
+  },
+  {
+    id: 'crystal-first',
+    name: 'Scenario 5: Crystal First',
+    description: 'Build and upgrade a single crystal utility building to L7 first (+47K crystal/hr), then build and fully upgrade metal buildings. Tests whether abundant crystal income makes metal upgrades cheaper/faster than pure metal rush.',
+    strategy: strategyCrystalFirst,
+    color: '#06b6d4',
   },
 ];

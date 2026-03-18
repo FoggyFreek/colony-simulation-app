@@ -151,7 +151,8 @@ describe('restrict to awake hours', () => {
     const mineAction = firstWake.actions.find(a => a.includes('Mine'));
     expect(mineAction).toBeDefined();
     // Sleep from 23:00 to 07:00 = 8 hours. Energy ~8 * 3.571 = 28.57
-    expect(mineAction).toMatch(/Mine \d+ times/);
+    // Format: "Mine <resource> <N> times (<energy> sleep energy)"
+    expect(mineAction).toMatch(/Mine \w+ \d+ times/);
   });
 
   it('shifted actions note their original hour', () => {
@@ -306,7 +307,108 @@ describe('scenario feasibility through agenda export', () => {
 });
 
 // ===========================================================================
-// 4. formatAgendaAsICS — validated against corrected reference output:
+// 4. Resource-gathering actions accompany every build/upgrade in the agenda
+//
+// For each Build / Upgrade entry the player must:
+//   1. Mine (to accumulate raw resources)
+//   2. Trade (if surplus gas/crystal must be converted to cover a deficit)
+//   3. Build / Upgrade the building
+//
+// These three steps should all appear in the same agenda entry so the
+// player knows exactly what to do at that moment.
+// ===========================================================================
+describe('build entries include all resource-gathering actions', () => {
+  const SEED = 42;
+
+  for (const scenario of SCENARIOS) {
+    describe(`${scenario.name}`, () => {
+      const result = simulate(scenario.strategy, SEED);
+      const { actionLog, timeline, miningByHour } = result;
+      const entries = buildAgenda(actionLog, timeline, SEASON_START, AWAKE_OFF, { miningByHour });
+
+      // Indexed lookup: simHour → mining data
+      const miningBySimHour = new Map(miningByHour.map(m => [m.hour, m]));
+
+      it('every build/upgrade entry shows mining activity for that hour when mining occurred', () => {
+        for (const entry of entries) {
+          if (entry.isWakeUp) continue; // wake-up entries bundle mining separately
+
+          const hasBuildOrUpgrade = entry.actions.some(
+            a => /\b(Build|Upgrade)\b/i.test(a) && !/^Trade:/i.test(a),
+          );
+          if (!hasBuildOrUpgrade) continue;
+
+          const miningData = miningBySimHour.get(entry.simHour);
+          if (!miningData || miningData.actions === 0) continue; // no mining this hour
+
+          const hasMine = entry.actions.some(a => /^Mine\s/i.test(a));
+          expect(
+            hasMine,
+            `H${entry.simHour}: build entry is missing a Mine action (${miningData.actions} mine(s) actually occurred)`,
+          ).toBe(true);
+        }
+      });
+
+      it('every trade action appears in the same entry as the build/upgrade it funds', () => {
+        for (const entry of entries) {
+          if (entry.isWakeUp) continue;
+
+          const hasTrade = entry.actions.some(a => /^Trade: sell\b/i.test(a));
+          if (!hasTrade) continue;
+
+          const hasBuildOrUpgrade = entry.actions.some(
+            a => /\b(Build|Upgrade)\b/i.test(a) && !/^Trade:/i.test(a),
+          );
+          expect(
+            hasBuildOrUpgrade,
+            `H${entry.simHour}: trade action exists without an accompanying build/upgrade in the same entry`,
+          ).toBe(true);
+        }
+      });
+
+      it('within a build entry the order is: Mine → Trade → Build/Upgrade', () => {
+        for (const entry of entries) {
+          if (entry.isWakeUp) continue;
+
+          const hasBuildOrUpgrade = entry.actions.some(
+            a => /\b(Build|Upgrade)\b/i.test(a) && !/^Trade:/i.test(a),
+          );
+          if (!hasBuildOrUpgrade) continue;
+
+          const mineIdx  = entry.actions.findIndex(a => /^Mine\s/i.test(a));
+          const tradeIdx = entry.actions.findIndex(a => /^Trade: sell\b/i.test(a));
+          const buildIdx = entry.actions.findIndex(
+            a => /\b(Build|Upgrade)\b/i.test(a) && !/^Trade:/i.test(a),
+          );
+
+          if (mineIdx >= 0 && buildIdx >= 0) {
+            expect(mineIdx, `H${entry.simHour}: Mine should come before Build/Upgrade`).toBeLessThan(buildIdx);
+          }
+          if (tradeIdx >= 0 && buildIdx >= 0) {
+            expect(tradeIdx, `H${entry.simHour}: Trade should come before Build/Upgrade`).toBeLessThan(buildIdx);
+          }
+        }
+      });
+
+      it('trade descriptions include sold and bought resource names', () => {
+        for (const entry of entries) {
+          const tradeActions = entry.actions.filter(a => /^Trade: sell\b/i.test(a));
+          for (const tradeAction of tradeActions) {
+            // Must contain "sell ... → buy ..."
+            expect(tradeAction, `H${entry.simHour}: trade action format`).toMatch(/sell .+ → buy .+/);
+            // Must mention at least one resource name on each side
+            const [sellSide, buySide] = tradeAction.split('→');
+            expect(sellSide).toMatch(/metals|gas|crystal/i);
+            expect(buySide).toMatch(/metals|gas|crystal/i);
+          }
+        }
+      });
+    });
+  }
+});
+
+// ===========================================================================
+// 5. formatAgendaAsICS — validated against corrected reference output:
 //
 //   BEGIN:VEVENT
 //   DTSTART;TZID=Europe/Amsterdam:20260320T160000
@@ -468,6 +570,82 @@ describe('formatAgendaAsICS', () => {
 });
 
 // ===========================================================================
+// 5. Mining energy cap — no agenda entry schedules more mines than possible
+//
+// MAX_ENERGY = 50. Asking a player to mine 60 times in one visit is impossible
+// and signals that the agenda failed to insert an earlier check-in before the
+// energy cap was reached. Two invariants are enforced:
+//
+//   A) No single "Mine X times" action exceeds Math.floor(MAX_ENERGY).
+//   B) With awake-mode off, no gap between consecutive entries exceeds
+//      Math.floor(MAX_ENERGY / ENERGY_PER_HOUR) sim hours — if it did,
+//      energy would hit the cap and unplayed mine actions would be lost.
+// ===========================================================================
+describe('mining entries stay within energy cap', () => {
+  const SEED = 42;
+
+  function parseMineCount(action) {
+    const m = action.match(/^Mine \w+ (\d+) times/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  for (const scenario of SCENARIOS) {
+    describe(`${scenario.name}`, () => {
+      const result = simulate(scenario.strategy, SEED);
+      const { actionLog, timeline, miningByHour } = result;
+
+      it('no mining action exceeds MAX_ENERGY operations (awake mode off)', () => {
+        const entries = buildAgenda(actionLog, timeline, SEASON_START, AWAKE_OFF, { miningByHour });
+
+        for (const entry of entries) {
+          for (const action of entry.actions) {
+            const count = parseMineCount(action);
+            if (count !== null) {
+              expect(
+                count,
+                `H${entry.simHour}: "${action}" — ${count} mines requested but max possible is ${Math.floor(MAX_ENERGY)}`,
+              ).toBeLessThanOrEqual(Math.floor(MAX_ENERGY));
+            }
+          }
+        }
+      });
+
+      it('no mining action exceeds MAX_ENERGY operations (awake mode on)', () => {
+        const entries = buildAgenda(actionLog, timeline, SEASON_START, AWAKE_ON, { miningByHour });
+
+        for (const entry of entries) {
+          for (const action of entry.actions) {
+            const count = parseMineCount(action);
+            if (count !== null) {
+              expect(
+                count,
+                `H${entry.simHour}: "${action}" — ${count} mines requested but max possible is ${Math.floor(MAX_ENERGY)}`,
+              ).toBeLessThanOrEqual(Math.floor(MAX_ENERGY));
+            }
+          }
+        }
+      });
+
+      it('consecutive entries are never more than the energy cap window apart (awake mode off)', () => {
+        // Beyond this gap, energy hits MAX_ENERGY and further regen is wasted.
+        // The agenda must insert a check-in before that point.
+        const capWindow = Math.floor(MAX_ENERGY / ENERGY_PER_HOUR); // ~14 h
+        const entries = buildAgenda(actionLog, timeline, SEASON_START, AWAKE_OFF, { miningByHour });
+
+        for (let i = 1; i < entries.length; i++) {
+          const gap = entries[i].simHour - entries[i - 1].simHour;
+          expect(
+            gap,
+            `gap between H${entries[i - 1].simHour} and H${entries[i].simHour} is ${gap}h ` +
+            `— exceeds cap window of ${capWindow}h, energy would max out and mining would be lost`,
+          ).toBeLessThanOrEqual(capWindow);
+        }
+      });
+    });
+  }
+});
+
+// ===========================================================================
 // 5. RFC 5545 compliance — AC1–AC21
 // ===========================================================================
 describe('formatAgendaAsICS — RFC 5545 compliance', () => {
@@ -498,7 +676,7 @@ describe('formatAgendaAsICS — RFC 5545 compliance', () => {
   const longEntry = makeEntry(0, [LONG_ACTION]);
 
   // Scenario name with chars that are illegal in UIDs
-  const SPECIAL_SCENARIO = 'Scenario 4: Optimal (Recommended)';
+  const SPECIAL_SCENARIO = 'Scenario 3: Optimal (Recommended)';
 
   // --- AC3: calendar-level metadata ---
   it('includes CALSCALE:GREGORIAN (AC3)', () => {
@@ -546,7 +724,7 @@ describe('formatAgendaAsICS — RFC 5545 compliance', () => {
     }
   });
 
-  it('colons from scenario name like "Scenario 4: Optimal" are removed from UID (AC11)', () => {
+  it('colons from scenario name like "Scenario 3: Optimal" are removed from UID (AC11)', () => {
     const uids = getAllFieldValues(formatAgendaAsICS([refEntry], SPECIAL_SCENARIO), 'UID');
     expect(uids[0]).not.toContain(':');
   });

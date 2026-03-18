@@ -1,6 +1,20 @@
 import { ENERGY_PER_HOUR, MAX_ENERGY } from './gameConstants';
 
 /**
+ * Return a display icon for an action string based on its type.
+ * Returns null for unknown types (Season Start, etc.).
+ */
+export function getActionIcon(action) {
+  if (!action) return null;
+  if (/^(Mine |Skip mining)/i.test(action)) return '⛏';
+  if (/^Trade \+ /i.test(action)) return '⬆';
+  if (/^Build /i.test(action)) return '🏗';
+  if (/^Upgrade /i.test(action)) return '⬆';
+  if (/^Trade[: ]/i.test(action)) return '🔄';
+  return null;
+}
+
+/**
  * Map a simulation hour (0-168) to a real-world Date based on season start.
  */
 export function mapSimHourToRealTime(simHour, seasonStart) {
@@ -69,7 +83,27 @@ export function nextWakeUp(date, awakeStart) {
  * @returns {Array} agenda entries
  */
 export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, options = {}) {
-  const { saveEnergy = false } = options;
+  const { saveEnergy = false, miningByHour = [] } = options;
+
+  // Build hour → resource lookup and hour → action count from miningByHour
+  const miningResourceByHour = new Map();
+  const miningCountByHour = new Map();
+  for (const entry of miningByHour) {
+    if (entry.resource) miningResourceByHour.set(entry.hour, entry.resource);
+    if (entry.actions > 0) miningCountByHour.set(entry.hour, entry.actions);
+  }
+
+  // Pick the most common mined resource across a set of hours (for wake-up bursts)
+  function dominantResource(hours) {
+    const counts = {};
+    for (const h of hours) {
+      const r = miningResourceByHour.get(h);
+      if (r) counts[r] = (counts[r] || 0) + 1;
+    }
+    const entries = Object.entries(counts);
+    if (entries.length === 0) return 'metals';
+    return entries.reduce((best, cur) => cur[1] > best[1] ? cur : best)[0];
+  }
   const { enabled: awakeEnabled, awakeStart = 7, awakeEnd = 23 } = awakeConfig;
   const entries = [];
 
@@ -99,8 +133,8 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
   const upgradeEnergyInfo = new Map(); // hour -> {energy, isMetal}
   if (saveEnergy) {
     for (const entry of actionLog) {
-      const isMetalUpgrade = /(?:Trade \+ )?(?:Upgrade|Build) metal/i.test(entry.action);
-      if (!isMetalUpgrade) continue;
+      const isUtilityUpgrade = /(?:Trade \+ )?(?:Upgrade|Build) (?:metal|gas|crystal)/i.test(entry.action);
+      if (!isUtilityUpgrade) continue;
 
       // Look at energy at upgrade hour — high energy means it was saved
       const energy = energyByHour.get(entry.hour);
@@ -116,6 +150,7 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
 
   // Track energy accumulation during sleep for mining notes
   let sleepEnergyAccum = 0;
+  let sleepHours = []; // sim hours that passed during sleep (for resource lookup)
   let shiftedActions = []; // actions shifted from sleep hours
   let lastWakeUpHour = null;
 
@@ -141,6 +176,7 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
       // Sleep hour: accumulate energy and shift actions
       sleepEnergyAccum += ENERGY_PER_HOUR;
       if (sleepEnergyAccum > MAX_ENERGY) sleepEnergyAccum = MAX_ENERGY;
+      sleepHours.push(h);
       if (hasActions) {
         for (const a of hourActions) {
           shiftedActions.push({ action: a, originalHour: h });
@@ -160,7 +196,8 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
       const wakeActions = [];
       const miningCount = Math.floor(sleepEnergyAccum);
       if (miningCount > 0) {
-        wakeActions.push(`Mine ${miningCount} times (${Math.round(sleepEnergyAccum)} sleep energy)`);
+        const res = dominantResource(sleepHours);
+        wakeActions.push(`Mine ${res} ${miningCount} times (${Math.round(sleepEnergyAccum)} sleep energy)`);
       }
       for (const shifted of shiftedActions) {
         wakeActions.push(`${shifted.action} (originally H${shifted.originalHour})`);
@@ -179,27 +216,49 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
       });
 
       sleepEnergyAccum = 0;
+      sleepHours = [];
       shiftedActions = [];
       lastWakeUpHour = realTime.getHours();
       continue;
     }
 
-    // Regular awake hour: check if we should add a mining check-in
-    // Energy accumulates ~3.571/hr, so every ~4 hours we have ~14 energy
+    // Regular awake hour: accumulate mining since last entry, then decide whether
+    // to emit an entry.  Accumulation is computed once here and shared across branches.
     const hoursSinceLastEntry = entries.length > 0
       ? h - entries[entries.length - 1].simHour
       : 0;
 
-    const shouldMiningCheckin = hoursSinceLastEntry >= 4 && !hasActions;
+    const lastSim = entries.length > 0 ? entries[entries.length - 1].simHour : 0;
+    let accMineCount = 0;
+    let accMineRes = 'metals';
+    for (let mh = lastSim + 1; mh <= h; mh++) {
+      accMineCount += miningCountByHour.get(mh) || 0;
+      if (miningResourceByHour.has(mh)) accMineRes = miningResourceByHour.get(mh);
+    }
+
+    // Fire a check-in when either:
+    //   • 4 hours have elapsed since the last entry (normal cadence), OR
+    //   • accumulated mines would exceed MAX_ENERGY in a single visit — this
+    //     happens at season start where energy begins at the cap (H1 = 50 mines).
+    const shouldMiningCheckin = !hasActions && (
+      hoursSinceLastEntry >= 4 ||
+      accMineCount >= Math.floor(MAX_ENERGY)
+    );
 
     if (hasActions) {
+      const augmentedActions = [];
+      if (accMineCount > 0) {
+        augmentedActions.push(`Mine ${accMineRes} ${accMineCount} times`);
+      }
+      augmentedActions.push(...hourActions);
+
       // When saveEnergy is on, annotate metal upgrades with post-upgrade mining
-      const augmentedActions = [...hourActions];
       if (saveEnergy && upgradeEnergyInfo.has(h)) {
         const info = upgradeEnergyInfo.get(h);
         const mineCount = Math.floor(info.energy);
         if (mineCount > 0) {
-          augmentedActions.push(`Mine ${mineCount} times after upgrade (saved energy, higher production rate)`);
+          const res = miningResourceByHour.get(h) ?? 'metals';
+          augmentedActions.push(`Mine ${res} ${mineCount} times after upgrade (saved energy, higher production rate)`);
         }
       }
       entries.push({
@@ -212,13 +271,14 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
         isWakeUp: false,
       });
     } else if (shouldMiningCheckin && !(saveEnergy && noMineHours.has(h))) {
-      // Suppress mining check-ins during save-energy periods
       const energyAccum = Math.round(hoursSinceLastEntry * ENERGY_PER_HOUR);
       entries.push({
         realTime: new Date(realTime),
         displayTime: formatTime(realTime),
         simHour: h,
-        actions: [`Mine (~${energyAccum} energy)`],
+        actions: [accMineCount > 0
+          ? `Mine ${accMineRes} ${accMineCount} times`
+          : `Mine (~${energyAccum} energy)`],
         shiftedFrom: null,
         miningNote: `~${energyAccum} energy accumulated`,
         isWakeUp: false,

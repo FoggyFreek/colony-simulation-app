@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { getValidActions, mapQueueToResults } from '../simulation/customStrategy';
+import { getActionIcon } from '../simulation/agendaUtils';
+import ActionIcon from './ActionIcon';
 
 export default function CustomStrategyComposer({ actionQueue, setActionQueue, simulationResult }) {
   const [selectedAction, setSelectedAction] = useState('');
@@ -130,9 +132,14 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
             className="flex-1 bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-2.5 py-1.5 rounded-md text-[0.85rem] focus:outline-none focus:border-[var(--color-accent)]"
           >
             <option value="">-- Select action --</option>
-            {validActions.map(a => (
-              <option key={actionKey(a)} value={actionKey(a)}>{a.label}</option>
-            ))}
+            {validActions.map(a => {
+              const icon = getActionIcon(a.label);
+              return (
+                <option key={actionKey(a)} value={actionKey(a)}>
+                  {icon ? `${icon} ${a.label}` : a.label}
+                </option>
+              );
+            })}
           </select>
           <button
             className="bg-pink-500 border-none text-white px-4 py-1.5 rounded-md cursor-pointer text-[0.85rem] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:not-disabled:bg-pink-600"
@@ -178,7 +185,10 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
                       </svg>
                     </span>
                     <span className="text-[var(--color-faint)] min-w-[24px]">{i + 1}.</span>
-                    <span className="flex-1 text-[var(--color-text)]">{item.label}</span>
+                    <span className="flex items-center gap-1 flex-1 text-[var(--color-text)]">
+                      <ActionIcon action={item.label} />
+                      {item.label}
+                    </span>
                     <span className="min-w-[40px] text-right">
                       {status?.completed ? (
                         <span className="text-emerald-500 font-semibold">H{status.hour}</span>

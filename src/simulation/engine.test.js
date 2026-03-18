@@ -4,7 +4,7 @@ import { strategyMaxMetal, strategyOptimal } from './strategies';
 import {
   STARTING_RESOURCES, BASE_PRODUCTION, BUILDING_PRODUCTION,
   METAL_BUILDING_COSTS, ENERGY_PER_HOUR, MAX_ENERGY,
-  MINING_VARIANCE, MINING_JACKPOT_MULTIPLIER,
+  MINING_VARIANCE, MINING_JACKPOT_MULTIPLIER, TRADE_RATIO_MIN,
 } from './gameConstants';
 
 // ---------------------------------------------------------------
@@ -87,6 +87,10 @@ describe('Game constants', () => {
 
   it('starting resources are 100k each', () => {
     expect(STARTING_RESOURCES).toEqual({ metals: 100000, gas: 100000, crystal: 100000, stardust: 0 });
+  });
+
+  it('season starts with 50 mining energy', () => {
+    expect(MAX_ENERGY).toBe(50);
   });
 
   it('energy regen rate is 3.571 per hour (game truncates 50/14)', () => {
@@ -388,12 +392,14 @@ describe('Save energy before upgrade toggle', () => {
     // approach trades a few low-rate mines for more high-rate mines
     // With same seed, both should complete the upgrade; the on version benefits
     // from mining at a higher production rate after the upgrade
-    expect(resultOn.finalState.totalMiningRewards.metals).toBeGreaterThan(0);
-    expect(resultOff.finalState.totalMiningRewards.metals).toBeGreaterThan(0);
+    const totalOn  = Object.values(resultOn.finalState.totalMiningRewards).reduce((a, b) => a + b, 0);
+    const totalOff = Object.values(resultOff.finalState.totalMiningRewards).reduce((a, b) => a + b, 0);
+    expect(totalOn).toBeGreaterThan(0);
+    expect(totalOff).toBeGreaterThan(0);
   });
 
-  it('does not skip mining for non-metal building upgrades', () => {
-    // Strategy that builds a stardust building — shouldSaveEnergy should return false
+  it('does not skip mining for stardust building upgrades', () => {
+    // Strategy that builds a stardust building — shouldSaveEnergy should return false (not a utility resource type)
     function strategyStardustOnly(hour, resources, buildings, production, totalBuildings) {
       if (buildings.stardust.length === 0 && totalBuildings < 9) {
         return [{ type: 'trade_and_build_stardust', targetLevel: 1 }];
@@ -573,5 +579,197 @@ describe('Hour 0 initial mining burst', () => {
     const hour0 = HOURLY_ROWS.find(r => r.hour === 0);
     const hour1 = HOURLY_ROWS.find(r => r.hour === 1);
     expect(hour1.metals).toBeCloseTo(hour0.metals + 6500 + hour0.miningReturns, 0);
+  });
+});
+
+
+// ---------------------------------------------------------------
+// Multi-resource MEQ mining selection
+// ---------------------------------------------------------------
+// At base production (no buildings): metalMEQ = 4500*0.02 = 90/mine,
+//   gasMEQ = 4000*0.02 / metalToGas. Gas beats metals when metalToGas < 4000/4500 ≈ 0.888.
+//   Trade ratios range TRADE_RATIO_MIN(0.65) – 1.35, so non-metal mining occurs regularly.
+//
+// After L1 metal build (metalProd=6500): metalMEQ = 130. Best possible gas MEQ =
+//   4000*0.02 / TRADE_RATIO_MIN ≈ 123. Metals always win — no gas/crystal mining ever.
+
+describe('Multi-resource MEQ mining selection', () => {
+  function strategyIdle() { return []; }
+
+  it('mined resource has the highest MEQ at every hour across a full season (idle, seed 42)', () => {
+    // For every hour in miningByHour, reconstruct the MEQ for each resource from the
+    // snapshot's trade ratios and verify the engine's chosen resource (entry.resource)
+    // had the highest (or tied-highest) MEQ.
+    //
+    // Note: snapshots store metalToGas rounded to 3 decimal places. Near the MEQ
+    // crossover (~0.888), rounding can cause a ±1 ULP discrepancy vs the raw ratio
+    // used in doMining. We therefore accept the chosen resource if its MEQ is within
+    // 0.1% of the maximum — tighter than any real strategic difference.
+    const result = simulate(strategyIdle, 42);
+
+    for (const entry of result.miningByHour) {
+      if (!entry.resource) continue; // no energy this hour
+
+      const snap = result.timeline.find(s => s.hour === entry.hour);
+      if (!snap) continue;
+
+      const { metalToGas, metalToCrystal } = snap;
+      const meq = {
+        metals:  snap.metalProd   * 0.02,
+        gas:     snap.gasProd     * 0.02 / metalToGas,
+        crystal: snap.crystalProd * 0.02 / metalToCrystal,
+      };
+      const maxMeq = Math.max(...Object.values(meq));
+      const chosenMeq = meq[entry.resource];
+
+      // Chosen resource must be within 0.1% of the best MEQ
+      expect(chosenMeq / maxMeq).toBeGreaterThanOrEqual(0.999);
+    }
+  });
+
+  it('exactly one resource is mined per hour (no split mining), resource field matches', () => {
+    // Each hour, all energy goes to the single best-MEQ resource.
+    // At most one amount field is non-zero, and entry.resource names that field.
+    const result = simulate(strategyIdle, 42);
+
+    for (const entry of result.miningByHour) {
+      const nonZero = [entry.metals, entry.gas, entry.crystal].filter(v => v > 0).length;
+      expect(nonZero).toBeLessThanOrEqual(1);
+
+      // resource field must be consistent with the amounts
+      if (entry.resource === null) {
+        expect(nonZero).toBe(0);
+      } else {
+        expect(entry[entry.resource]).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('gas or crystal is mined during early season at base production (hours 1–50)', () => {
+    // At base production (4500/4000/4000), gas or crystal wins when their trade ratio
+    // drops below 0.888. Over 50 hours the ratio traverses enough of its sine-wave
+    // range to cross that threshold at least once.
+    // Check multiple seeds so the test isn't sensitive to one seed's phase.
+    let nonMetalFound = false;
+    for (const seed of [42, 100, 999, 12345]) {
+      const result = simulate(strategyIdle, seed);
+      const earlyHours = result.miningByHour.filter(e => e.hour >= 1 && e.hour <= 50);
+      if (earlyHours.some(e => e.gas > 0 || e.crystal > 0)) {
+        nonMetalFound = true;
+        break;
+      }
+    }
+    expect(nonMetalFound).toBe(true);
+  });
+
+  it('no gas or crystal mined after metal L1 is built (metalProd 6500 always beats any gas/crystal MEQ)', () => {
+    // After L1: metalMEQ = 6500*0.02 = 130. Best possible gas MEQ = 4000*0.02 / TRADE_RATIO_MIN ≈ 123.
+    // Metals win at every trade ratio, so gas/crystal rewards must stay at zero.
+    function strategyL1AtStart(hour) {
+      if (hour === 0) return [{ type: 'build', buildingType: 'metal' }];
+      return [];
+    }
+
+    const result = simulate(strategyL1AtStart, 42);
+    const { gas, crystal, metals } = result.finalState.totalMiningRewards;
+    expect(metals).toBeGreaterThan(0);
+    expect(gas).toBe(0);
+    expect(crystal).toBe(0);
+
+    // Cross-check via miningByHour — post-L1, gas and crystal columns are always 0
+    const nonMetalHours = result.miningByHour.filter(e => e.gas > 0 || e.crystal > 0);
+    expect(nonMetalHours.length).toBe(0);
+  });
+
+  it('gas/crystal mining stops the moment metalProd crosses the MEQ threshold (mid-season)', () => {
+    // Strategy: idle for 40 hours (base prod, non-metal mining may occur),
+    // then build metal L1 at hour 40. After hour 40, only metals should be mined.
+    let builtAt40 = false;
+    function strategyBuildAtHour40(hour) {
+      if (hour === 40 && !builtAt40) {
+        builtAt40 = true;
+        return [{ type: 'build', buildingType: 'metal' }];
+      }
+      return [];
+    }
+    // Need a fresh flag per simulate call
+    builtAt40 = false;
+    const result = simulate(strategyBuildAtHour40, 42);
+
+    const buildEntry = result.actionLog.find(e => e.action.includes('Build metal'));
+    expect(buildEntry).toBeDefined();
+    const buildHour = buildEntry.hour;
+
+    // After the build hour, gas and crystal columns in miningByHour must be zero
+    const postBuildNonMetal = result.miningByHour
+      .filter(e => e.hour > buildHour && (e.gas > 0 || e.crystal > 0));
+    expect(postBuildNonMetal.length).toBe(0);
+
+    // Before (or at) the build hour, non-metal mining should have occurred at least once
+    // across the idle phase — validates the transition is real, not trivially empty
+    const preBuildNonMetal = result.miningByHour
+      .filter(e => e.hour <= buildHour && (e.gas > 0 || e.crystal > 0));
+    expect(preBuildNonMetal.length).toBeGreaterThan(0);
+  });
+});
+
+
+describe('Build before initial 50-energy mine: efficiency advantage', () => {
+  // Engine order: hour-0 strategy actions → (loop starts at hour 1: produce → regen → mine → strategy).
+  // Building at hour 0 takes effect before doMining fires at hour 1, so the initial
+  // 50-energy mine runs at the higher post-build production rate.
+
+  it('starting resources are sufficient to buy metal L1 before any production', () => {
+    // Metal L1 costs 30k metals, 70k gas, 100k crystal. Starting resources are 100k each.
+    const cost = METAL_BUILDING_COSTS[1];
+    expect(STARTING_RESOURCES.metals).toBeGreaterThanOrEqual(cost.metals);
+    expect(STARTING_RESOURCES.gas).toBeGreaterThanOrEqual(cost.gas);
+    expect(STARTING_RESOURCES.crystal).toBeGreaterThanOrEqual(cost.crystal);
+  });
+
+  it('metal L1 built at hour 0 raises metalProd to 6500 before the 50-energy mine fires at hour 1', () => {
+    function strategyBuildFirst(hour) {
+      if (hour === 0) return [{ type: 'build', buildingType: 'metal' }];
+      return [];
+    }
+    const { timeline } = simulate(strategyBuildFirst, 42);
+    const hour1Snap = timeline.find(s => s.hour === 1);
+    // Production must already reflect the L1 build when hour 1's doMining runs
+    expect(hour1Snap.metalProd).toBe(BASE_PRODUCTION.metals + BUILDING_PRODUCTION[1]); // 6500
+  });
+
+  it('mining 50 energy at post-build production (6500) yields more metal-equivalent than at base (4500)', () => {
+    // Build-first: 50 actions × (6500 × 0.02 = 130 MEQ/action) = 6500 MEQ
+    // Mine-first:  50 actions at base prod, MEQ/action ≤ max(90, 4000×0.02/metalToGas)
+    //   Since TRADE_RATIO_MIN = 0.65, max non-metal MEQ = 80/0.65 ≈ 123 < 130.
+    //   Build-first MEQ is strictly higher for any seed and any valid trade ratio.
+    //
+    // Engine default: doMining runs before strategy, so returning a build at hour 1
+    // fires AFTER the 50-energy mine — representing "mine first, then build".
+    function strategyBuildFirst(hour) {
+      if (hour === 0) return [{ type: 'build', buildingType: 'metal' }];
+      return [];
+    }
+    function strategyBuildAfterMining(hour) {
+      if (hour === 1) return [{ type: 'build', buildingType: 'metal' }];
+      return [];
+    }
+
+    const seed = 42;
+    const resultBF = simulate(strategyBuildFirst, seed);
+    const resultDL = simulate(strategyBuildAfterMining, seed);
+
+    const mineH1BF = resultBF.miningByHour.find(e => e.hour === 1);
+    const mineH1DL = resultDL.miningByHour.find(e => e.hour === 1);
+
+    // Trade ratios are seed-determined and identical in both runs. Use them to
+    // convert whichever resource was mined into metal-equivalent for a fair comparison.
+    const snap1 = resultBF.timeline.find(s => s.hour === 1);
+    const { metalToGas, metalToCrystal } = snap1;
+
+    const meqBF = mineH1BF.metals + mineH1BF.gas / metalToGas + mineH1BF.crystal / metalToCrystal;
+    const meqDL = mineH1DL.metals + mineH1DL.gas / metalToGas + mineH1DL.crystal / metalToCrystal;
+
+    expect(meqBF).toBeGreaterThan(meqDL);
   });
 });
