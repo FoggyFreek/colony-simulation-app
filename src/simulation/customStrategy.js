@@ -91,6 +91,31 @@ function buildEngineAction(queueItem, expectedBuildings) {
 export function validateActionQueue(actionQueue) {
   const errors = [];
   const virtualBuildings = { metal: [], gas: [], crystal: [], stardust: [] };
+  // { item, queueIndex } — upgrades whose prerequisite slot hasn't been built yet
+  const deferred = [];
+
+  function flushDeferred(buildingType) {
+    for (let i = 0; i < deferred.length; i++) {
+      const { item, queueIndex } = deferred[i];
+      if (item.buildingType !== buildingType) continue;
+      const maxLevel = buildingType === 'stardust' ? 3 : 7;
+      const slots = virtualBuildings[buildingType];
+      if (item.slotIndex >= slots.length) continue; // slot still not ready
+      const currentLevel = slots[item.slotIndex];
+      if (currentLevel >= maxLevel) {
+        errors.push({ index: queueIndex, message: `${buildingType}[${item.slotIndex}] already at max level ${maxLevel}` });
+        deferred.splice(i--, 1);
+        continue;
+      }
+      if (item.targetLevel !== currentLevel + 1) {
+        errors.push({ index: queueIndex, message: `Expected target L${currentLevel + 1}, got L${item.targetLevel}` });
+        deferred.splice(i--, 1);
+        continue;
+      }
+      slots[item.slotIndex] = item.targetLevel;
+      deferred.splice(i--, 1);
+    }
+  }
 
   for (let i = 0; i < actionQueue.length; i++) {
     const item = actionQueue[i];
@@ -103,10 +128,16 @@ export function validateActionQueue(actionQueue) {
         errors.push({ index: i, message: `No slots available (max ${BUILDING_SLOTS})` });
         continue;
       }
+      if (buildingType === 'stardust' && virtualBuildings.stardust.length >= 1) {
+        errors.push({ index: i, message: `Only one stardust building is allowed — upgrade it to L3 for more production` });
+        continue;
+      }
       virtualBuildings[buildingType].push(1);
+      flushDeferred(buildingType);
     } else if (actionType === 'upgrade') {
       if (slotIndex >= virtualBuildings[buildingType].length) {
-        errors.push({ index: i, message: `${buildingType}[${slotIndex}] doesn't exist yet` });
+        // Slot doesn't exist yet — defer until after the prerequisite build
+        deferred.push({ item, queueIndex: i });
         continue;
       }
       const currentLevel = virtualBuildings[buildingType][slotIndex];
@@ -120,6 +151,11 @@ export function validateActionQueue(actionQueue) {
       }
       virtualBuildings[buildingType][slotIndex] = targetLevel;
     }
+  }
+
+  // Any still-deferred upgrades have no matching build anywhere in the queue
+  for (const { item, queueIndex } of deferred) {
+    errors.push({ index: queueIndex, message: `${item.buildingType}[${item.slotIndex}] is never built` });
   }
 
   return { valid: errors.length === 0, errors };
@@ -197,8 +233,8 @@ export function getValidActions(actionQueue) {
     const maxLevel = type === 'stardust' ? 3 : 7;
     const slots = virtualBuildings[type];
 
-    // Build new
-    if (totalSlots < BUILDING_SLOTS) {
+    // Build new (stardust is limited to one building per planet)
+    if (totalSlots < BUILDING_SLOTS && !(type === 'stardust' && slots.length >= 1)) {
       actions.push({
         buildingType: type,
         actionType: 'build',

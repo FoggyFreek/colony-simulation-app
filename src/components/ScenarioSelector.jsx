@@ -1,44 +1,55 @@
-function formatNumber(val) {
-  if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
-  if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;
-  return val.toString();
-}
+import ScenarioCard from './ScenarioCard';
+import { getTier } from '../simulation/gameConstants';
 
-export default function ScenarioSelector({ scenarios, active, onSelect, results }) {
+const GRID = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3";
+
+export default function ScenarioSelector({ scenarios, active, onSelect, results, starPrice, solPrice }) {
+  const validScenarios = scenarios.filter(s => results[s.id]);
+  const maxPoints = validScenarios.length
+    ? Math.max(...validScenarios.map(s => results[s.id].finalState.leaderboardPoints))
+    : 1;
+  const maxStardust = validScenarios.length
+    ? Math.max(...validScenarios.map(s => results[s.id].finalState.totalStardust))
+    : 1;
+
+  const maxSol = validScenarios.length
+    ? Math.max(...validScenarios.map(s => getTier(results[s.id].finalState.leaderboardPoints).sol))
+    : 1;
+
+  const starPriceNum = starPrice !== '' && !isNaN(Number(starPrice)) ? Number(starPrice) : 0;
+  const solPriceNum = solPrice !== '' && !isNaN(Number(solPrice)) ? Number(solPrice) : 0;
+  const maxActions = validScenarios.length
+    ? Math.max(...validScenarios.map(s => results[s.id].actionLog.length))
+    : 1;
+
+  const maxUsd = validScenarios.length
+    ? Math.max(...validScenarios.map(s => {
+        const pts = s.id !== undefined ? results[s.id].finalState.leaderboardPoints : 0;
+        const sd = results[s.id].finalState.totalStardust;
+        return getTier(pts).sol * solPriceNum + sd * starPriceNum;
+      }))
+    : 1;
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
-      {scenarios.map(s => {
-        const result = results[s.id];
-        const pts = result?.finalState?.leaderboardPoints;
-        const sd = result?.finalState?.totalStardust;
-        const isActive = active === s.id;
-        return (
-          <div
+    <div className="mb-8">
+      <div className={GRID}>
+        {scenarios.map(s => (
+          <ScenarioCard
             key={s.id}
-            className={`bg-[var(--color-surface)] rounded-xl p-4 cursor-pointer transition-all duration-200 shadow-[var(--shadow-card)] border-2 hover:-translate-y-0.5 hover:shadow-[var(--shadow-card-lg)] ${
-              isActive
-                ? 'border-[var(--accent-color)] shadow-[0_0_20px_rgba(45,212,191,0.15)]'
-                : 'border-[var(--color-border)] hover:border-[var(--color-border-hover)]'
-            }`}
-            style={{ '--accent-color': s.color }}
+            scenario={s}
+            isActive={active === s.id}
+            result={results[s.id]}
+            maxPoints={maxPoints}
+            maxStardust={maxStardust}
+            maxSol={maxSol}
+            maxUsd={maxUsd}
+            maxActions={maxActions}
+            starPrice={starPrice}
+            solPrice={solPrice}
             onClick={() => onSelect(s.id)}
-          >
-            <h3 className="text-[0.85rem] font-semibold mb-2" style={{ color: s.color }}>{s.name}</h3>
-            {result ? (
-              <>
-                <div className="text-[1.4rem] font-bold mb-1" style={{ color: s.color }}>
-                  {formatNumber(pts)} pts
-                </div>
-                <div className="text-xs text-[var(--color-muted)]">
-                  {sd.toFixed(1)} Stardust
-                </div>
-              </>
-            ) : (
-              <div className="text-xs text-[var(--color-muted)]">Add actions to start</div>
-            )}
-          </div>
-        );
-      })}
+          />
+        ))}
+      </div>
     </div>
   );
 }

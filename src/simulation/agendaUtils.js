@@ -293,6 +293,104 @@ export function formatAgendaAsText(entries, scenarioName, seasonStart, awakeConf
 }
 
 /**
+ * Format agenda entries as an iCalendar (.ics) string containing only build/upgrade events.
+ */
+export function formatAgendaAsICS(entries, scenarioName) {
+  const dtstamp = formatICSDateUTC(new Date());
+  // Sanitize scenario name for use in UID: only letters, digits, -, _, ., @ allowed
+  const safeName = scenarioName
+    .toLowerCase()
+    .replace(/[^a-z0-9\-_.@]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Colony Simulator//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+
+  for (const entry of entries) {
+    // Filter to build/upgrade actions only
+    const buildActions = entry.actions.filter(a =>
+      /\b(Build|Upgrade)\b/i.test(a)
+    );
+    if (buildActions.length === 0) continue;
+
+    const dtStart = formatICSDate(entry.realTime);
+    const dtEnd = formatICSDate(new Date(entry.realTime.getTime() + 5 * 60 * 1000));
+    const summary = escapeICSText(buildActions.join(', '));
+    const description = escapeICSText(
+      buildActions.map(a => `H${entry.simHour} — ${a}`).join('\n')
+    );
+    const uid = `colony-sim-${safeName}-h${entry.simHour}@colony-simulator`;
+
+    lines.push('BEGIN:VEVENT');
+    lines.push(`DTSTART;TZID=Europe/Amsterdam:${dtStart}`);
+    lines.push(`DTEND;TZID=Europe/Amsterdam:${dtEnd}`);
+    lines.push(`DTSTAMP:${dtstamp}`);
+    lines.push(`SUMMARY:${summary}`);
+    lines.push(`DESCRIPTION:${description}`);
+    lines.push(`UID:${uid}`);
+    lines.push('END:VEVENT');
+  }
+
+  lines.push('END:VCALENDAR');
+  return lines.map(foldICSLine).join('\r\n');
+}
+
+function formatICSDate(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function formatICSDateUTC(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+}
+
+// RFC 5545 §3.3.11: escape \, comma, semicolon, and newline in TEXT values
+function escapeICSText(text) {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/\n/g, '\\n');
+}
+
+// RFC 5545 §3.1: fold lines that exceed 75 octets
+function foldICSLine(line) {
+  const encoder = typeof TextEncoder !== 'undefined'
+    ? new TextEncoder()
+    : null;
+  const byteLen = (s) => encoder
+    ? encoder.encode(s).length
+    : Buffer.byteLength(s, 'utf8');
+
+  if (byteLen(line) <= 75) return line;
+
+  const chars = [...line]; // spread handles multi-byte chars correctly
+  let result = '';
+  let lineBytes = 0;
+  let first = true;
+
+  for (const char of chars) {
+    const cb = byteLen(char);
+    const limit = first ? 75 : 74; // continuation lines carry a 1-byte leading space
+    if (lineBytes + cb > limit) {
+      result += '\r\n ';
+      lineBytes = 1;
+      first = false;
+    }
+    result += char;
+    lineBytes += cb;
+  }
+  return result;
+}
+
+/**
  * Get the next upcoming Friday at 16:00 local time from a given date.
  */
 export function getNextFriday16(fromDate = new Date()) {

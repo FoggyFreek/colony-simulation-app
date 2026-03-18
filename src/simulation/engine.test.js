@@ -445,6 +445,81 @@ describe('Save energy before upgrade toggle', () => {
   });
 });
 
+describe('Stardust building limit: only one per planet', () => {
+  it('cannot build a second stardust building', () => {
+    // Strategy that aggressively tries to build as many stardust buildings as possible
+    function strategyMultiStardust(hour, resources, buildings, production, totalBuildings) {
+      if (totalBuildings < 9) {
+        return [{ type: 'trade_and_build_stardust', targetLevel: 1 }];
+      }
+      return [];
+    }
+
+    const result = simulate(strategyMultiStardust, 42);
+    // Only one stardust building should ever exist regardless of attempts
+    const maxStardustBuildings = Math.max(
+      ...result.timeline.map(s => s.buildings.stardust.length)
+    );
+    expect(maxStardustBuildings).toBe(1);
+  });
+
+  it('stardust building can be upgraded to L3 for maximum output', () => {
+    // Build metal L1 first for economy, then rush stardust L1→L3
+    function strategyUpgradeStardust(hour, resources, buildings, production, totalBuildings) {
+      const sd = buildings.stardust;
+      const metal = buildings.metal;
+      if (metal.length === 0 && totalBuildings < 9) {
+        return [{ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 }];
+      }
+      if (metal.length > 0 && metal[0] < 5) {
+        return [{ type: 'trade_and_upgrade', buildingType: 'metal', buildingIndex: 0, targetLevel: metal[0] + 1 }];
+      }
+      if (sd.length === 0 && totalBuildings < 9) {
+        return [{ type: 'trade_and_build_stardust', targetLevel: 1 }];
+      }
+      if (sd.length > 0 && sd[0] < 2) {
+        return [{ type: 'trade_and_build_stardust', targetLevel: 2, buildingIndex: 0 }];
+      }
+      if (sd.length > 0 && sd[0] < 3) {
+        return [{ type: 'trade_and_build_stardust', targetLevel: 3, buildingIndex: 0 }];
+      }
+      return [];
+    }
+
+    const result = simulate(strategyUpgradeStardust, 42);
+    const finalBuildings = result.finalState.buildings;
+    // The single stardust building should reach L3
+    expect(finalBuildings.stardust.length).toBe(1);
+    expect(finalBuildings.stardust[0]).toBe(3);
+  });
+
+  it('stardust production is capped at L3 (+3/hr) from the single building', () => {
+    // Build metal L1 first for economy, then rush stardust L1→L3
+    function strategyUpgradeStardust(hour, resources, buildings, production, totalBuildings) {
+      const sd = buildings.stardust;
+      const metal = buildings.metal;
+      if (metal.length === 0 && totalBuildings < 9) {
+        return [{ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 }];
+      }
+      if (metal.length > 0 && metal[0] < 5) {
+        return [{ type: 'trade_and_upgrade', buildingType: 'metal', buildingIndex: 0, targetLevel: metal[0] + 1 }];
+      }
+      if (sd.length === 0 && totalBuildings < 9) {
+        return [{ type: 'trade_and_build_stardust', targetLevel: 1 }];
+      }
+      if (sd.length > 0 && sd[0] < 3) {
+        return [{ type: 'trade_and_build_stardust', targetLevel: sd[0] + 1, buildingIndex: 0 }];
+      }
+      return [];
+    }
+
+    const result = simulate(strategyUpgradeStardust, 42);
+    const maxStardustProd = Math.max(...result.timeline.map(s => s.stardustProd));
+    expect(maxStardustProd).toBe(3); // L3 = +3/hr, which is STARDUST_BUILDING_PRODUCTION[3]
+  });
+});
+
+
 describe('Save energy with full strategies', () => {
   it('strategyMaxMetal produces valid results with saveEnergy on', () => {
     const seed = 42;

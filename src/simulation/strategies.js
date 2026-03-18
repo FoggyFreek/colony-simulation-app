@@ -154,10 +154,11 @@ export function strategyBalanced(hour, resources, buildings, production, totalBu
 }
 
 // ============================================================
-// SCENARIO 3: Max Stardust - Rush stardust production ASAP
-// Build new stardust L1 buildings to fill all 9 slots before
-// upgrading any. L1 costs 300K for +1/hr vs L2 upgrade 900K
-// for same +1/hr — 3x more efficient to build new first.
+// SCENARIO 3: Max Stardust - Rush the single stardust building
+// to L3 ASAP. Only one stardust building is allowed per planet;
+// upgrading to L3 is the only way to increase stardust output.
+// L3 = +3/hr stardust, giving maximum stardust over the season.
+// Remaining slots are filled with metal buildings for economy.
 // ============================================================
 export function strategyMaxStardust(hour, resources, buildings, production, totalBuildings) {
   const actions = [];
@@ -177,14 +178,23 @@ export function strategyMaxStardust(hour, resources, buildings, production, tota
     return actions;
   }
 
-  // Phase 2: Fill all remaining slots with stardust L1 buildings
-  // Each L1 = 300K total for +1/hr. With 8 remaining slots = 8/hr stardust
-  if (totalBuildings < 9) {
+  // Phase 2: Build the single stardust building ASAP
+  if (stardustBuildings.length === 0 && totalBuildings < 9) {
     actions.push({ type: 'trade_and_build_stardust', targetLevel: 1 });
     return actions;
   }
 
-  // Phase 3: Upgrade metal building to fund stardust upgrades
+  // Phase 3: Upgrade stardust building to L2, then L3 (max output from the one allowed building)
+  if (stardustBuildings.length > 0 && stardustBuildings[0] < 2) {
+    actions.push({ type: 'trade_and_build_stardust', targetLevel: 2, buildingIndex: 0 });
+    return actions;
+  }
+  if (stardustBuildings.length > 0 && stardustBuildings[0] < 3) {
+    actions.push({ type: 'trade_and_build_stardust', targetLevel: 3, buildingIndex: 0 });
+    return actions;
+  }
+
+  // Phase 4: Upgrade metal building to fund further growth
   if (metalBuildings[0] < 7) {
     actions.push({
       type: 'trade_and_upgrade', buildingType: 'metal',
@@ -193,22 +203,12 @@ export function strategyMaxStardust(hour, resources, buildings, production, tota
     return actions;
   }
 
-  // Phase 4: Now upgrade stardust buildings (all slots filled, upgrades are the only option)
-  // Upgrade each stardust building to L2 first (cheaper), then L3
-  for (let i = 0; i < stardustBuildings.length; i++) {
-    if (stardustBuildings[i] < 2) {
-      actions.push({ type: 'trade_and_build_stardust', targetLevel: 2, buildingIndex: i });
-      return actions;
-    }
-  }
-  for (let i = 0; i < stardustBuildings.length; i++) {
-    if (stardustBuildings[i] < 3) {
-      actions.push({ type: 'trade_and_build_stardust', targetLevel: 3, buildingIndex: i });
-      return actions;
-    }
+  // Phase 5: Fill remaining slots with metal buildings and upgrade them
+  if (totalBuildings < 9) {
+    actions.push({ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 });
+    return actions;
   }
 
-  // Phase 5: If everything is maxed, upgrade metal building further (shouldn't reach here often)
   for (let i = 0; i < metalBuildings.length; i++) {
     if (metalBuildings[i] < 7) {
       actions.push({
@@ -217,11 +217,6 @@ export function strategyMaxStardust(hour, resources, buildings, production, tota
       });
       return actions;
     }
-  }
-
-  // Build even more buildings if slots available
-  if (totalBuildings < 9) {
-    actions.push({ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 });
   }
 
   return actions;
@@ -348,6 +343,91 @@ export function strategyOptimal(hour, resources, buildings, production, totalBui
   return actions;
 }
 
+// ============================================================
+// SCENARIO 5: Max USD - Explorer tier + stardust bonus
+// Strategy: Rush first metal to L7, build stardust L1 (cheap at
+// 100K each, +50K LP, +1 SD/hr for remaining ~70 hours), then
+// continue metal rush: 2nd metal L7, 3rd metal L7, fill slots.
+// SD L1 after first M7 is the sweet spot — SD L2 (900K cost)
+// delays metal too much and risks dropping below Explorer.
+// Optimized for STAR=$0.092, SOL=$95. Avg ~$82.43 USD across seeds.
+// ============================================================
+export function strategyMaxUSD(hour, resources, buildings, production, totalBuildings) {
+  const actions = [];
+  const metalBuildings = buildings.metal;
+  const stardustBuildings = buildings.stardust;
+
+  // Priority 1: Build first metal building
+  if (metalBuildings.length === 0) {
+    actions.push({ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 });
+    return actions;
+  }
+
+  // Priority 2: Rush first metal to L7 for maximum early economy
+  if (metalBuildings[0] < 7) {
+    actions.push({
+      type: 'trade_and_upgrade', buildingType: 'metal',
+      buildingIndex: 0, targetLevel: metalBuildings[0] + 1,
+    });
+    return actions;
+  }
+
+  // Priority 3: Build stardust L1 — cheap (300K total) and earns ~70 SD over remaining hours
+  if (stardustBuildings.length === 0 && totalBuildings < 9) {
+    actions.push({ type: 'trade_and_build_stardust', targetLevel: 1 });
+    return actions;
+  }
+
+  // Priority 4: Build second metal and rush to L7
+  if (metalBuildings.length < 2 && totalBuildings < 9) {
+    actions.push({ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 });
+    return actions;
+  }
+  if (metalBuildings.length >= 2 && metalBuildings[1] < 7) {
+    actions.push({
+      type: 'trade_and_upgrade', buildingType: 'metal',
+      buildingIndex: 1, targetLevel: metalBuildings[1] + 1,
+    });
+    return actions;
+  }
+
+  // Priority 5: Build third metal and rush to L7
+  if (metalBuildings.length < 3 && totalBuildings < 9) {
+    actions.push({ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 });
+    return actions;
+  }
+  if (metalBuildings.length >= 3 && metalBuildings[2] < 7) {
+    actions.push({
+      type: 'trade_and_upgrade', buildingType: 'metal',
+      buildingIndex: 2, targetLevel: metalBuildings[2] + 1,
+    });
+    return actions;
+  }
+
+  // Priority 6: Fill remaining slots with metal buildings and upgrade
+  if (totalBuildings < 9) {
+    actions.push({ type: 'trade_and_upgrade', buildingType: 'metal', targetLevel: 1 });
+    return actions;
+  }
+  for (let i = 0; i < metalBuildings.length; i++) {
+    if (metalBuildings[i] < 7) {
+      actions.push({
+        type: 'trade_and_upgrade', buildingType: 'metal',
+        buildingIndex: i, targetLevel: metalBuildings[i] + 1,
+      });
+      return actions;
+    }
+  }
+
+  // Priority 7: Upgrade stardust further once all metal is maxed
+  if (stardustBuildings.length > 0 && stardustBuildings[0] < 3) {
+    actions.push({ type: 'trade_and_build_stardust', targetLevel: stardustBuildings[0] + 1, buildingIndex: 0 });
+    return actions;
+  }
+
+  return actions;
+}
+
 export const SCENARIOS = [
   {
     id: 'max-metal',
@@ -366,7 +446,7 @@ export const SCENARIOS = [
   {
     id: 'max-stardust',
     name: 'Scenario 3: Stardust Rush',
-    description: 'Accumulate maximum stardust. Build one metal L3 for economy, then fill all 8 remaining slots with stardust L1 before upgrading. New L1 (300K) gives +1/hr — 3x cheaper than L2 upgrade (900K).',
+    description: 'Accumulate maximum stardust. Only one stardust building is allowed per planet. Build metal L3 for economy, build the single stardust building, then upgrade it to L3 (+3/hr). Fill remaining slots with metal buildings.',
     strategy: strategyMaxStardust,
     color: '#8b5cf6',
   },
@@ -376,5 +456,12 @@ export const SCENARIOS = [
     description: 'Aggressive early economy + early stardust + maximum building points. Designed to reach top 3% leaderboard.',
     strategy: strategyOptimal,
     color: '#10b981',
+  },
+  {
+    id: 'max-usd',
+    name: 'Scenario 5: Max USD Value',
+    description: 'Maximize total dollar value (STAR + SOL rewards). Rush metal L7, build stardust L1 for bonus income, then continue metal rush to secure Explorer tier. Optimized for STAR=$0.092 / SOL=$95.',
+    strategy: strategyMaxUSD,
+    color: '#e11d48',
   },
 ];

@@ -182,7 +182,7 @@ describe('validateActionQueue', () => {
     const queue = [q('metal', 'upgrade', 0, 2)];
     const { valid, errors } = validateActionQueue(queue);
     expect(valid).toBe(false);
-    expect(errors[0].message).toContain("doesn't exist");
+    expect(errors[0].message).toContain("is never built");
   });
 
   it('rejects exceeding max building slots', () => {
@@ -230,7 +230,7 @@ describe('validateActionQueue', () => {
     expect(errors[0].message).toContain('Expected target L2');
   });
 
-  it('mixed building types across 9 slots is valid', () => {
+  it('mixed building types across 9 slots is valid (one stardust max)', () => {
     const queue = [
       q('metal', 'build', 0, 1),
       q('gas', 'build', 0, 1),
@@ -239,11 +239,21 @@ describe('validateActionQueue', () => {
       q('metal', 'build', 1, 1),
       q('gas', 'build', 1, 1),
       q('crystal', 'build', 1, 1),
-      q('stardust', 'build', 1, 1),
+      q('gas', 'build', 2, 1),
       q('metal', 'build', 2, 1),
     ];
     const { valid } = validateActionQueue(queue);
     expect(valid).toBe(true);
+  });
+
+  it('rejects a second stardust build', () => {
+    const queue = [
+      q('stardust', 'build', 0, 1),
+      q('stardust', 'build', 1, 1),
+    ];
+    const { valid, errors } = validateActionQueue(queue);
+    expect(valid).toBe(false);
+    expect(errors[0].message).toContain('Only one stardust building is allowed');
   });
 });
 

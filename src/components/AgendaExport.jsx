@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { buildAgenda, formatAgendaAsText, formatDayHeader, getNextFriday16 } from '../simulation/agendaUtils';
+import { buildAgenda, formatAgendaAsText, formatAgendaAsICS, formatDayHeader, getNextFriday16 } from '../simulation/agendaUtils';
 
 export default function AgendaExport({ actionLog, timeline, scenario, saveEnergy }) {
   const [seasonStart, setSeasonStart] = useState(() => getNextFriday16());
@@ -50,6 +50,21 @@ export default function AgendaExport({ actionLog, timeline, scenario, saveEnergy
     a.click();
     URL.revokeObjectURL(url);
   }, [textExport, scenario.id]);
+
+  const icsExport = useMemo(
+    () => formatAgendaAsICS(entries, scenario.name),
+    [entries, scenario.name],
+  );
+
+  const handleDownloadICS = useCallback(() => {
+    const blob = new Blob([icsExport], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `colony-agenda-${scenario.id}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [icsExport, scenario.id]);
 
   const groupedEntries = useMemo(() => {
     const groups = [];
@@ -153,6 +168,9 @@ export default function AgendaExport({ actionLog, timeline, scenario, saveEnergy
           </button>
           <button className={btnClass} onClick={handleDownload}>
             Download .txt
+          </button>
+          <button className={btnClass} onClick={handleDownloadICS}>
+            Download .ics
           </button>
         </div>
       </div>

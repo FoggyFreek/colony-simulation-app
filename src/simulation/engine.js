@@ -1,9 +1,9 @@
 import {
   SEASON_HOURS, STARTING_RESOURCES, BASE_PRODUCTION, BUILDING_SLOTS,
   BUILDING_PRODUCTION, STARDUST_BUILDING_PRODUCTION,
-  BUILDING_COST_MAP, ENERGY_PER_HOUR, MINING_REWARD_RATE,
+  BUILDING_COST_MAP, ENERGY_PER_HOUR,
   MINING_JACKPOT_CHANCE, MINING_JACKPOT_MULTIPLIER, MINING_VARIANCE,
-  MAX_ENERGY, RESOURCE_POINTS_PER_UNIT, STARDUST_POINTS_PER_UNIT,
+  MAX_ENERGY, STARDUST_POINTS_PER_UNIT,
   BUILDING_UPGRADE_POINTS, STARDUST_UPGRADE_POINTS,
   TRADE_RATIO_CENTER, TRADE_RATIO_AMPLITUDE,
 } from './gameConstants';
@@ -45,6 +45,15 @@ function generateTradeRatios(seed, totalHours) {
   return ratios;
 }
 
+function cloneBuildings(buildings) {
+  return {
+    metal: [...buildings.metal],
+    gas: [...buildings.gas],
+    crystal: [...buildings.crystal],
+    stardust: [...buildings.stardust],
+  };
+}
+
 export function simulate(strategy, seed = 42, options = {}) {
   const { saveEnergyBeforeUpgrade = false } = options;
   const rand = seededRandom(seed);
@@ -53,13 +62,17 @@ export function simulate(strategy, seed = 42, options = {}) {
 
   // State
   let resources = { ...STARTING_RESOURCES };
-  let buildings = { metal: [], gas: [], crystal: [], stardust: [] }; // arrays of levels
+  let buildings = { metal: [], gas: [], crystal: [], stardust: [] };
   let production = { ...BASE_PRODUCTION };
   let energy = MAX_ENERGY;
   let leaderboardPoints = 0;
+  let resourcePoints = 0;
+  let stardustPoints = 0;
+  let buildingBuiltPoints = 0;
+  let buildingUpgradePoints = 0;
   let totalResourcesProduced = { metals: 0, gas: 0, crystal: 0, stardust: 0 };
   let totalMiningRewards = { metals: 0, gas: 0, crystal: 0 };
-  let actionLog = [];
+  const actionLog = [];
 
   function recalcProduction() {
     let metalProd = BASE_PRODUCTION.metals;
@@ -104,15 +117,16 @@ export function simulate(strategy, seed = 42, options = {}) {
     buildings[type][buildingIndex] = nextLevel;
     recalcProduction();
 
-    // Award leaderboard points
     const pts = type === 'stardust' ? STARDUST_UPGRADE_POINTS[nextLevel] : BUILDING_UPGRADE_POINTS[nextLevel];
     leaderboardPoints += pts;
+    buildingUpgradePoints += pts;
 
     return true;
   }
 
   function tryBuildNew(type) {
     if (getTotalBuildingCount() >= BUILDING_SLOTS) return false;
+    if (type === 'stardust' && buildings.stardust.length >= 1) return false;
     const cost = BUILDING_COST_MAP[type][1];
     if (!canAfford(cost)) return false;
 
@@ -122,16 +136,14 @@ export function simulate(strategy, seed = 42, options = {}) {
 
     const pts = type === 'stardust' ? STARDUST_UPGRADE_POINTS[1] : BUILDING_UPGRADE_POINTS[1];
     leaderboardPoints += pts;
+    buildingBuiltPoints += pts;
     return true;
   }
 
   // Trade: convert surplus resources to needed ones using current trade ratios.
-  // Trade ratios define how much gas/crystal you get per 1 metal traded.
   // Conversions use metal as the numeraire:
-  //   metal→gas: 1 metal = metalToGas gas
-  //   metal→crystal: 1 metal = metalToCrystal crystal
-  //   gas→metal: 1 gas = 1/metalToGas metal (inverse)
-  //   crystal→metal: 1 crystal = 1/metalToCrystal metal (inverse)
+  //   metal->gas: 1 metal = metalToGas gas
+  //   gas->metal: 1 gas = 1/metalToGas metal (inverse)
   function tradeForUpgrade(type, targetLevel, hour) {
     const cost = BUILDING_COST_MAP[type][targetLevel];
     if (!cost) return false;
@@ -144,17 +156,15 @@ export function simulate(strategy, seed = 42, options = {}) {
       crystal: Math.max(0, (cost.crystal || 0) - resources.crystal),
     };
     const totalNeeded = needed.metals + needed.gas + needed.crystal;
-    if (totalNeeded === 0) return true; // Already can afford
+    if (totalNeeded === 0) return true;
 
-    // Calculate surplus (what we have beyond what's needed for the cost)
     const surplus = {
       metals: Math.max(0, resources.metals - (cost.metals || 0)),
       gas: Math.max(0, resources.gas - (cost.gas || 0)),
       crystal: Math.max(0, resources.crystal - (cost.crystal || 0)),
     };
 
-    // Convert surplus and needed to metal-equivalent using trade ratios
-    // This correctly accounts for variable exchange rates
+    // Convert to metal-equivalent using trade ratios
     const surplusMeq = surplus.metals
       + surplus.gas * (1 / metalToGas)
       + surplus.crystal * (1 / metalToCrystal);
@@ -180,8 +190,7 @@ export function simulate(strategy, seed = 42, options = {}) {
     const miningActions = Math.floor(energy);
     if (miningActions <= 0) return 0;
 
-    // Mine metals (strongest resource on metal planet)
-    // Formula: hourly_production * 0.02 per mine, ±20% variance, 2% jackpot (10x)
+    // hourly_production * 0.02 per mine, +/-20% variance, 2% jackpot (10x)
     const baseRewardPerMine = production.metals * 0.02;
     let totalReward = 0;
     for (let i = 0; i < miningActions; i++) {
@@ -213,7 +222,11 @@ export function simulate(strategy, seed = 42, options = {}) {
       stardustProd: production.stardust,
       energy: Math.round(energy * 10) / 10,
       leaderboardPoints: Math.round(leaderboardPoints),
-      buildings: JSON.parse(JSON.stringify(buildings)),
+      resourcePoints: Math.round(resourcePoints),
+      stardustPoints: Math.round(stardustPoints),
+      buildingBuiltPoints: Math.round(buildingBuiltPoints),
+      buildingUpgradePoints: Math.round(buildingUpgradePoints),
+      buildings: cloneBuildings(buildings),
       totalBuildingCount: getTotalBuildingCount(),
       metalToGas: Math.round(metalToGas * 1000) / 1000,
       metalToCrystal: Math.round(metalToCrystal * 1000) / 1000,
@@ -245,53 +258,29 @@ export function simulate(strategy, seed = 42, options = {}) {
     return hoursToAfford <= 10;
   }
 
-  // Initial snapshot
-  snapshot(0, 'Season Start');
+  // Try to trade (if needed) then build or upgrade a building. Returns true on success.
+  function tradeAndBuildOrUpgrade(type, targetLevel, buildingIndex, hour) {
+    const traded = tradeForUpgrade(type, targetLevel, hour);
+    if (!traded) return false;
 
-  // Execute strategy actions at hour 0 (before production starts)
-  const actions = strategy(0, { ...resources }, JSON.parse(JSON.stringify(buildings)), production, getTotalBuildingCount());
-  executeActions(actions, 0);
+    const isNewBuild = buildingIndex === undefined || buildingIndex >= (buildings[type]?.length ?? 0);
 
-  // Simulate each hour
-  for (let hour = 1; hour <= SEASON_HOURS; hour++) {
-    // 1. Produce resources
-    resources.metals += production.metals;
-    resources.gas += production.gas;
-    resources.crystal += production.crystal;
-    resources.stardust += production.stardust;
-
-    totalResourcesProduced.metals += production.metals;
-    totalResourcesProduced.gas += production.gas;
-    totalResourcesProduced.crystal += production.crystal;
-    totalResourcesProduced.stardust += production.stardust;
-
-    // Award resource production points
-    leaderboardPoints += production.metals + production.gas + production.crystal;
-    leaderboardPoints += production.stardust * STARDUST_POINTS_PER_UNIT;
-
-    // 2. Regenerate energy
-    energy = Math.min(MAX_ENERGY, energy + ENERGY_PER_HOUR);
-
-    // 3 & 4. Mining + Strategy (order depends on saveEnergyBeforeUpgrade mode)
-    if (saveEnergyBeforeUpgrade) {
-      // Strategy FIRST so upgrades happen before mining (higher production = better mining)
-      const stratActions = strategy(hour, { ...resources }, JSON.parse(JSON.stringify(buildings)), production, getTotalBuildingCount());
-      const shouldSkipMining = shouldSaveEnergy(stratActions, resources, production);
-      executeActions(stratActions, hour);
-      if (!shouldSkipMining) {
-        doMining(hour);
+    if (isNewBuild) {
+      const success = tryBuildNew(type);
+      if (success) {
+        actionLog.push({ hour, action: `Trade + Build ${type} L1` });
+        snapshot(hour, `Trade + Build ${type} L1`);
       }
-    } else {
-      // Original order: mining first, then strategy
-      const miningReward = doMining(hour);
-      const stratActions = strategy(hour, { ...resources }, JSON.parse(JSON.stringify(buildings)), production, getTotalBuildingCount());
-      executeActions(stratActions, hour);
+      return success;
     }
 
-    // 5. Snapshot every hour (for charts), but we'll downsample later
-    if (hour % 1 === 0) {
-      snapshot(hour);
+    const success = tryUpgradeBuilding(type, buildingIndex);
+    if (success) {
+      const newLvl = buildings[type][buildingIndex];
+      actionLog.push({ hour, action: `Trade + Upgrade ${type}[${buildingIndex}] to L${newLvl}` });
+      snapshot(hour, `Trade + Upgrade ${type}[${buildingIndex}] to L${newLvl}`);
     }
+    return success;
   }
 
   function executeActions(actions, hour) {
@@ -312,37 +301,18 @@ export function simulate(strategy, seed = 42, options = {}) {
           snapshot(hour, `Upgrade ${action.buildingType}[${idx}] to L${newLvl}`);
         }
       } else if (action.type === 'trade_and_upgrade') {
-        const traded = tradeForUpgrade(action.buildingType, action.targetLevel, hour);
-        if (traded) {
-          let success;
-          if (action.buildingIndex !== undefined && action.buildingIndex < buildings[action.buildingType].length) {
-            success = tryUpgradeBuilding(action.buildingType, action.buildingIndex);
-            if (success) {
-              const newLvl = buildings[action.buildingType][action.buildingIndex];
-              actionLog.push({ hour, action: `Trade + Upgrade ${action.buildingType}[${action.buildingIndex}] to L${newLvl}` });
-              snapshot(hour, `Trade + Upgrade ${action.buildingType}[${action.buildingIndex}] to L${newLvl}`);
-            }
-          } else {
-            success = tryBuildNew(action.buildingType);
-            if (success) {
-              actionLog.push({ hour, action: `Trade + Build ${action.buildingType} L1` });
-              snapshot(hour, `Trade + Build ${action.buildingType} L1`);
-            }
-          }
-        }
+        tradeAndBuildOrUpgrade(action.buildingType, action.targetLevel, action.buildingIndex, hour);
       } else if (action.type === 'trade_and_build_stardust') {
         const traded = tradeForUpgrade('stardust', action.targetLevel, hour);
         if (traded) {
           if (action.targetLevel === 1) {
-            const success = tryBuildNew('stardust');
-            if (success) {
+            if (tryBuildNew('stardust')) {
               actionLog.push({ hour, action: `Trade + Build Stardust L1` });
               snapshot(hour, `Trade + Build Stardust L1`);
             }
           } else {
-            const idx = action.buildingIndex || 0;
-            const success = tryUpgradeBuilding('stardust', idx);
-            if (success) {
+            const idx = action.buildingIndex ?? 0;
+            if (tryUpgradeBuilding('stardust', idx)) {
               actionLog.push({ hour, action: `Trade + Upgrade Stardust to L${action.targetLevel}` });
               snapshot(hour, `Trade + Upgrade Stardust to L${action.targetLevel}`);
             }
@@ -352,9 +322,53 @@ export function simulate(strategy, seed = 42, options = {}) {
     }
   }
 
-  // Final summary
-  const finalPoints = leaderboardPoints;
-  const finalStardust = resources.stardust;
+  // Initial snapshot
+  snapshot(0, 'Season Start');
+
+  // Execute strategy actions at hour 0 (before production starts)
+  const initialActions = strategy(0, { ...resources }, cloneBuildings(buildings), production, getTotalBuildingCount());
+  executeActions(initialActions, 0);
+
+  // Simulate each hour
+  for (let hour = 1; hour <= SEASON_HOURS; hour++) {
+    // 1. Produce resources
+    resources.metals += production.metals;
+    resources.gas += production.gas;
+    resources.crystal += production.crystal;
+    resources.stardust += production.stardust;
+
+    totalResourcesProduced.metals += production.metals;
+    totalResourcesProduced.gas += production.gas;
+    totalResourcesProduced.crystal += production.crystal;
+    totalResourcesProduced.stardust += production.stardust;
+
+    // Award resource production points
+    const hourlyResourcePts = production.metals + production.gas + production.crystal;
+    const hourlyStardustPts = production.stardust * STARDUST_POINTS_PER_UNIT;
+    leaderboardPoints += hourlyResourcePts + hourlyStardustPts;
+    resourcePoints += hourlyResourcePts;
+    stardustPoints += hourlyStardustPts;
+
+    // 2. Regenerate energy
+    energy = Math.min(MAX_ENERGY, energy + ENERGY_PER_HOUR);
+
+    // 3 & 4. Mining + Strategy (order depends on saveEnergyBeforeUpgrade mode)
+    if (saveEnergyBeforeUpgrade) {
+      // Strategy FIRST so upgrades happen before mining (higher production = better mining)
+      const stratActions = strategy(hour, { ...resources }, cloneBuildings(buildings), production, getTotalBuildingCount());
+      const shouldSkipMining = shouldSaveEnergy(stratActions, resources, production);
+      executeActions(stratActions, hour);
+      if (!shouldSkipMining) {
+        doMining(hour);
+      }
+    } else {
+      doMining(hour);
+      const stratActions = strategy(hour, { ...resources }, cloneBuildings(buildings), production, getTotalBuildingCount());
+      executeActions(stratActions, hour);
+    }
+
+    snapshot(hour);
+  }
 
   return {
     timeline,
@@ -362,11 +376,11 @@ export function simulate(strategy, seed = 42, options = {}) {
     finalState: {
       resources: { ...resources },
       production: { ...production },
-      buildings: JSON.parse(JSON.stringify(buildings)),
-      leaderboardPoints: Math.round(finalPoints),
+      buildings: cloneBuildings(buildings),
+      leaderboardPoints: Math.round(leaderboardPoints),
       totalResourcesProduced,
       totalMiningRewards,
-      totalStardust: Math.round(finalStardust * 100) / 100,
+      totalStardust: Math.round(resources.stardust * 100) / 100,
     },
   };
 }

@@ -55,7 +55,7 @@ Purchase a planet to start the game. Your planet type is randomly determined:
 | Metallic    | 30%    | +500 Base Metals Production |
 | Crystalline | 30%    | +500 Base Crystal Production |
 | Gaseous     | 30%    | +500 Base Gas Production |
-| Starfield   | 10%    | +0.1 Base Stardust Production |
+| Starfield   | 10%    | +0.25 Base Stardust Production |
 
 #### Step 2: Collect Resources
 Your planet starts with **100,000 Metals**, **100,000 Crystal**, **100,000 Gas**, and **0 Stardust**. It then automatically produces more over time. You have four resources to manage:
@@ -93,7 +93,7 @@ A standard planet produces:
 | Gas      | 4,000/hr  |
 | Crystal  | 4,000/hr  |
 
-Planet type bonuses add +500/hr to your primary resource (or +0.1/hr Stardust for Starfield planets).
+Planet type bonuses add +500/hr to your primary resource (or +0.25/hr Stardust for Starfield planets).
 
 #### Production
 **Passive Production**  
@@ -178,6 +178,8 @@ Each building level increases your hourly production, on top of the planet type 
 | 1     | +1/hr            | 1/hr                  |
 | 2     | +1/hr            | 2/hr                  |
 | 3     | +1/hr            | 3/hr                  |
+
+Only a single Stardust Building is allowed per planet.
 
 #### Upgrade Cooldowns
 All building upgrades have no cooldown — you can upgrade again immediately.
@@ -295,7 +297,7 @@ Every meaningful in-game action contributes to your score.
 | Resource              | Points                  |
 |-----------------------|-------------------------|
 | Metals / Gas / Crystal| 1 point per resource    |
-| Stardust              | 5,000 points per resource |
+| Stardust              | 3,000 points per resource |
 
 **Building Upgrades**
 

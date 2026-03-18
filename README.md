@@ -14,7 +14,6 @@ A React app that simulates and compares 4 build strategies for a Metal planet in
 ## Getting Started
 
 ```bash
-cd colony-sim
 npm install
 npm run dev       # http://localhost:5173
 ```
@@ -71,4 +70,4 @@ See [`game-rules-colony.md`](game-rules-colony.md) for full mechanics. Key point
 
 ## Reference Test Case
 
-[`colony-testcase.md`](colony-testcase.md) contains 43 hourly snapshots from a real game session. The test suite validates the engine's formulas against these expected values.
+docs/colony-testcase.md contains 43 hourly snapshots from a real game session. The test suite validates the engine's formulas against these expected values.

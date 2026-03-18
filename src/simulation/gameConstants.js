@@ -78,14 +78,14 @@ export const MINING_JACKPOT_MULTIPLIER = 10;
 export const MINING_VARIANCE = 0.20; // ±20%
 
 // Trade ratios (Metal → Gas / Crystal)
-export const TRADE_RATIO_MIN = 0.75;
-export const TRADE_RATIO_MAX = 1.25;
+export const TRADE_RATIO_MIN = 0.65;
+export const TRADE_RATIO_MAX = 1.35;
 export const TRADE_RATIO_CENTER = 1.0;
-export const TRADE_RATIO_AMPLITUDE = 0.25; // half-range from center
+export const TRADE_RATIO_AMPLITUDE = 0.35; // half-range from center
 
 // Leaderboard points
 export const RESOURCE_POINTS_PER_UNIT = 1;
-export const STARDUST_POINTS_PER_UNIT = 5000;
+export const STARDUST_POINTS_PER_UNIT = 3000;
 
 export const BUILDING_UPGRADE_POINTS = [0, 20000, 50000, 100000, 200000, 300000, 500000, 800000];
 export const STARDUST_UPGRADE_POINTS = [0, 50000, 100000, 300000];
@@ -96,3 +96,18 @@ export const BUILDING_COST_MAP = {
   crystal: CRYSTAL_BUILDING_COSTS,
   stardust: STARDUST_BUILDING_COSTS,
 };
+
+export const TIERS = [
+  { min: 16000000, name: 'Explorer',  cls: 'tier-explorer',  pct: 'Top 1%',  sol: 0.8  },
+  { min: 12500000, name: 'Diamond',   cls: 'tier-diamond',   pct: 'Top 5%',  sol: 0.3  },
+  { min: 11000000, name: 'Platinum',  cls: 'tier-platinum',  pct: 'Top 10%', sol: 0.16 },
+  { min: 10000000, name: 'Gold',      cls: 'tier-gold',      pct: 'Top 30%', sol: 0.12 },
+  { min: 9500000, name: 'Silver',    cls: 'tier-silver',    pct: 'Top 50%', sol: 0.06 },
+  { min: 5000000, name: 'Bronze',    cls: 'tier-bronze',    pct: 'Top 70%', sol: 0.03 },
+];
+
+const NO_TIER = { min: 0, name: 'No Tier', cls: 'tier-none', pct: 'Bottom 30%', sol: 0 };
+
+export function getTier(points) {
+  return TIERS.find(t => points >= t.min) || NO_TIER;
+}

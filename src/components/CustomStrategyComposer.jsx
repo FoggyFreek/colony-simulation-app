@@ -4,7 +4,11 @@ import { getValidActions, mapQueueToResults } from '../simulation/customStrategy
 export default function CustomStrategyComposer({ actionQueue, setActionQueue, simulationResult }) {
   const [selectedAction, setSelectedAction] = useState('');
   const [overflowWarning, setOverflowWarning] = useState(null);
-  const prevQueueLenRef = useRef(actionQueue.length);
+  const [collapsed, setCollapsed] = useState(false);
+  const prevHasOverflowRef = useRef(false);
+  const isFirstRender = useRef(true);
+  const dragIndexRef = useRef(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   const validActions = useMemo(() => getValidActions(actionQueue), [actionQueue]);
 
@@ -24,16 +28,22 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
   const hasOverflow = simulationResult && statuses.length > 0 && lastCompletedIdx < statuses.length - 1;
 
   useEffect(() => {
-    if (actionQueue.length > prevQueueLenRef.current && simulationResult) {
-      const lastStatus = statuses[statuses.length - 1];
-      if (lastStatus && !lastStatus.completed) {
-        setOverflowWarning('This action does not fit within the 168-hour season.');
-        const timer = setTimeout(() => setOverflowWarning(null), 4000);
-        return () => clearTimeout(timer);
-      }
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      prevHasOverflowRef.current = !!hasOverflow;
+      return;
     }
-    prevQueueLenRef.current = actionQueue.length;
-  }, [actionQueue.length, statuses, simulationResult]);
+    if (hasOverflow && !prevHasOverflowRef.current) {
+      setOverflowWarning('One or more actions do not fit within the 168-hour season.');
+      const timer = setTimeout(() => setOverflowWarning(null), 4000);
+      prevHasOverflowRef.current = true;
+      return () => clearTimeout(timer);
+    }
+    if (!hasOverflow && prevHasOverflowRef.current) {
+      setOverflowWarning(null);
+    }
+    prevHasOverflowRef.current = !!hasOverflow;
+  }, [hasOverflow]);
 
   function handleAdd() {
     const action = validActions.find(a => actionKey(a) === selectedAction);
@@ -47,16 +57,38 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
     setActionQueue(rebuildQueue(next));
   }
 
-  function handleMove(index, direction) {
-    const newIdx = index + direction;
-    if (newIdx < 0 || newIdx >= actionQueue.length) return;
+  function handleClear() {
+    setActionQueue([]);
+  }
+
+  function handleDragStart(index) {
+    dragIndexRef.current = index;
+  }
+
+  function handleDragOver(e, index) {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const insertPos = e.clientY < rect.top + rect.height / 2 ? index : index + 1;
+    setDragOverIndex(insertPos);
+  }
+
+  function handleDrop() {
+    const from = dragIndexRef.current;
+    const to = dragOverIndex;
+    dragIndexRef.current = null;
+    setDragOverIndex(null);
+    if (from === null || to === null) return;
+    const insertAt = to > from ? to - 1 : to;
+    if (insertAt === from) return;
     const next = [...actionQueue];
-    [next[index], next[newIdx]] = [next[newIdx], next[index]];
+    const [removed] = next.splice(from, 1);
+    next.splice(insertAt, 0, removed);
     setActionQueue(rebuildQueue(next));
   }
 
-  function handleClear() {
-    setActionQueue([]);
+  function handleDragEnd() {
+    dragIndexRef.current = null;
+    setDragOverIndex(null);
   }
 
   const projectedPoints = simulationResult?.finalState?.leaderboardPoints;
@@ -67,8 +99,20 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
   return (
     <div className="bg-[var(--color-surface)] rounded-xl p-5 border border-[var(--color-border)] mb-6 shadow-[var(--shadow-card)]">
       <div className="flex justify-between items-center mb-3">
-        <h3 className="text-sm text-pink-500 font-semibold">Custom Build Order</h3>
-        {actionQueue.length > 0 && (
+        <button
+          className="flex items-center gap-1.5 text-sm text-pink-500 font-semibold cursor-pointer bg-transparent border-none p-0 hover:opacity-75 transition-opacity"
+          onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? 'Expand' : 'Collapse'}
+        >
+          <svg
+            width="12" height="12" viewBox="0 0 12 12" fill="currentColor"
+            className={`transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+          >
+            <path d="M1 3 L6 9 L11 3Z" />
+          </svg>
+          Custom Build Order
+        </button>
+        {!collapsed && actionQueue.length > 0 && (
           <button
             className="bg-transparent border border-[var(--color-border)] text-[var(--color-muted)] px-2.5 py-0.5 rounded-md cursor-pointer text-xs transition-all duration-200 hover:bg-[var(--color-inset)] hover:text-[var(--color-text)]"
             onClick={handleClear}
@@ -78,25 +122,26 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
         )}
       </div>
 
-      <div className="flex gap-2 mb-3">
-        <select
-          value={selectedAction}
-          onChange={e => setSelectedAction(e.target.value)}
-          className="flex-1 bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-2.5 py-1.5 rounded-md text-[0.85rem] focus:outline-none focus:border-[var(--color-accent)]"
-        >
-          <option value="">-- Select action --</option>
-          {validActions.map(a => (
-            <option key={actionKey(a)} value={actionKey(a)}>{a.label}</option>
-          ))}
-        </select>
-        <button
-          className="bg-pink-500 border-none text-white px-4 py-1.5 rounded-md cursor-pointer text-[0.85rem] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:not-disabled:bg-pink-600"
-          onClick={handleAdd}
-          disabled={!selectedAction}
-        >
-          Add
-        </button>
-      </div>
+      {!collapsed && <>
+        <div className="flex gap-2 mb-3">
+          <select
+            value={selectedAction}
+            onChange={e => setSelectedAction(e.target.value)}
+            className="flex-1 bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-2.5 py-1.5 rounded-md text-[0.85rem] focus:outline-none focus:border-[var(--color-accent)]"
+          >
+            <option value="">-- Select action --</option>
+            {validActions.map(a => (
+              <option key={actionKey(a)} value={actionKey(a)}>{a.label}</option>
+            ))}
+          </select>
+          <button
+            className="bg-pink-500 border-none text-white px-4 py-1.5 rounded-md cursor-pointer text-[0.85rem] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:not-disabled:bg-pink-600"
+            onClick={handleAdd}
+            disabled={!selectedAction}
+          >
+            Add
+          </button>
+        </div>
 
       {actionQueue.length > 0 && (
         <>
@@ -106,16 +151,32 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
             </div>
           )}
 
-          <div className="flex flex-col gap-1 mb-3">
+          <div className="flex flex-col mb-3">
             {actionQueue.map((item, i) => {
               const status = statuses[i];
               const isOverflow = simulationResult && status && !status.completed;
               const showCutoff = hasOverflow && i === lastCompletedIdx;
               return (
                 <div key={item.id}>
-                  <div className={`flex items-center gap-2 bg-[var(--color-inset)] border rounded-md px-2.5 py-1.5 text-xs font-mono ${
+                  {dragOverIndex === i && (
+                    <div className="h-0.5 bg-pink-500 rounded mx-1 my-0.5" />
+                  )}
+                  <div
+                    draggable
+                    onDragStart={() => handleDragStart(i)}
+                    onDragOver={e => handleDragOver(e, i)}
+                    onDrop={handleDrop}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 bg-[var(--color-inset)] border rounded-md px-2.5 py-1.5 mt-1 text-xs font-mono ${
                     isOverflow ? 'opacity-45 border-[var(--color-danger-border)]' : 'border-[var(--color-border)]'
                   }`}>
+                    <span className="text-[var(--color-faint)] cursor-grab active:cursor-grabbing select-none" title="Drag to reorder">
+                      <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
+                        <circle cx="2" cy="3" r="1.5"/><circle cx="8" cy="3" r="1.5"/>
+                        <circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
+                        <circle cx="2" cy="13" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
+                      </svg>
+                    </span>
                     <span className="text-[var(--color-faint)] min-w-[24px]">{i + 1}.</span>
                     <span className="flex-1 text-[var(--color-text)]">{item.label}</span>
                     <span className="min-w-[40px] text-right">
@@ -126,18 +187,6 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
                       ) : null}
                     </span>
                     <div className="flex gap-1">
-                      <button
-                        className={queueBtnBase}
-                        onClick={() => handleMove(i, -1)}
-                        disabled={i === 0}
-                        title="Move up"
-                      >^</button>
-                      <button
-                        className={queueBtnBase}
-                        onClick={() => handleMove(i, 1)}
-                        disabled={i === actionQueue.length - 1}
-                        title="Move down"
-                      >v</button>
                       <button
                         className={`${queueBtnBase} hover:!bg-red-950 hover:!text-red-300`}
                         onClick={() => handleRemove(i)}
@@ -155,6 +204,9 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
                 </div>
               );
             })}
+            {dragOverIndex === actionQueue.length && (
+              <div className="h-0.5 bg-pink-500 rounded mx-1 mt-1" />
+            )}
           </div>
 
           {simulationResult && (
@@ -175,6 +227,7 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
           Add build/upgrade actions above to create your custom strategy.
         </div>
       )}
+      </>}
     </div>
   );
 }
@@ -182,6 +235,28 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
 function rebuildQueue(queue) {
   const virtualBuildings = { metal: [], gas: [], crystal: [], stardust: [] };
   const result = [];
+  const deferred = []; // upgrades waiting for their prerequisite build slot
+
+  function flushDeferred(buildingType) {
+    for (let i = 0; i < deferred.length; i++) {
+      const { item } = deferred[i];
+      if (item.buildingType !== buildingType) continue;
+      const maxLevel = buildingType === 'stardust' ? 3 : 7;
+      const slots = virtualBuildings[buildingType];
+      if (item.slotIndex >= slots.length) continue; // slot still doesn't exist
+      const currentLevel = slots[item.slotIndex];
+      if (currentLevel >= maxLevel) { deferred.splice(i--, 1); continue; }
+      const nextLevel = currentLevel + 1;
+      slots[item.slotIndex] = nextLevel;
+      result.push({
+        ...item,
+        slotIndex: item.slotIndex,
+        targetLevel: nextLevel,
+        label: `Upgrade ${capitalize(buildingType)}[${item.slotIndex}] to L${nextLevel}`,
+      });
+      deferred.splice(i--, 1);
+    }
+  }
 
   for (const item of queue) {
     const { buildingType, actionType } = item;
@@ -199,16 +274,19 @@ function rebuildQueue(queue) {
         targetLevel: 1,
         label: `Build ${typeName} L1`,
       });
+      flushDeferred(buildingType);
     } else if (actionType === 'upgrade') {
-      let slotIdx = item.slotIndex;
-      if (slotIdx >= virtualBuildings[buildingType].length) {
-        slotIdx = virtualBuildings[buildingType].findIndex(lvl => lvl < maxLevel);
-        if (slotIdx === -1) continue;
+      const slots = virtualBuildings[buildingType];
+      const slotIdx = item.slotIndex;
+      if (slotIdx >= slots.length) {
+        // Prerequisite build hasn't happened yet — defer until after it does
+        deferred.push({ item });
+        continue;
       }
-      const currentLevel = virtualBuildings[buildingType][slotIdx];
+      const currentLevel = slots[slotIdx];
       if (currentLevel >= maxLevel) continue;
       const nextLevel = currentLevel + 1;
-      virtualBuildings[buildingType][slotIdx] = nextLevel;
+      slots[slotIdx] = nextLevel;
       const typeName = capitalize(buildingType);
       result.push({
         ...item,
@@ -217,6 +295,23 @@ function rebuildQueue(queue) {
         label: `Upgrade ${typeName}[${slotIdx}] to L${nextLevel}`,
       });
     }
+  }
+
+  // Any still-deferred upgrades: try redirecting to first available slot of that type
+  for (const { item } of deferred) {
+    const { buildingType } = item;
+    const maxLevel = buildingType === 'stardust' ? 3 : 7;
+    const slots = virtualBuildings[buildingType];
+    const slotIdx = slots.findIndex(lvl => lvl < maxLevel);
+    if (slotIdx === -1) continue;
+    const nextLevel = slots[slotIdx] + 1;
+    slots[slotIdx] = nextLevel;
+    result.push({
+      ...item,
+      slotIndex: slotIdx,
+      targetLevel: nextLevel,
+      label: `Upgrade ${capitalize(buildingType)}[${slotIdx}] to L${nextLevel}`,
+    });
   }
 
   return result;

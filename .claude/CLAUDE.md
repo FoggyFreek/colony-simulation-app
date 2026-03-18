@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Colony Simulator — a React app that simulates 4 strategy scenarios for a Metal planet in Colony (a Solana-based onchain game). It models a full 7-day season (168 hours) with resource production, building upgrades, mining, trading, and leaderboard point accumulation.
+Colony Simulator — a React app that simulates 5 strategy scenarios for a Metal planet in Colony (a Solana-based onchain game). It models a full 7-day season (168 hours) with resource production, building upgrades, mining, trading, and leaderboard point accumulation.
 
 Game rules are documented in `game-rules-colony.md`. A reference test case with expected hourly values is in `colony-testcase.md`.
 
@@ -27,14 +27,14 @@ colony-sim/src/
 ├── simulation/           # Pure logic, no React dependency
 │   ├── gameConstants.js  # All game rules: costs, production rates, energy, points
 │   ├── engine.js         # simulate(strategy, seed) → {timeline, actionLog, finalState}
-│   ├── strategies.js     # 4 strategy functions + SCENARIOS array
+│   ├── strategies.js     # 5 strategy functions + SCENARIOS array
 │   └── engine.test.js    # Validates formulas against colony-testcase.md
 ├── components/           # Presentational React components (charts, cards, logs)
 ├── App.jsx               # State management: activeScenario, seed → useMemo(simulate)
 └── index.css             # Tailwind v4 import + CSS custom properties for dark/light theme
 ```
 
-**Data flow:** `App.jsx` calls `simulate()` for each of the 4 strategies on seed change. Each strategy is a function `(hour, resources, buildings, production, totalBuildings) → actions[]` called every simulated hour. The engine executes actions (build, upgrade, trade+upgrade) and records timeline snapshots.
+**Data flow:** `App.jsx` calls `simulate()` for each of the 5 strategies on seed change. Each strategy is a function `(hour, resources, buildings, production, totalBuildings) → actions[]` called every simulated hour. The engine executes actions (build, upgrade, trade+upgrade) and records timeline snapshots.
 
 **Seeded RNG:** The engine uses a linear congruential generator so mining variance is reproducible per seed. The UI exposes a seed control to randomize.
 
@@ -55,6 +55,7 @@ Three things are kept as plain CSS in `index.css` (Tailwind cannot express them)
 - **Energy regen:** Exactly `3.571` per hour (game truncates 50/14). At hour 7 this gives energy=3.997 (floor=3), not 4.0.
 - **Trade ratios:** Randomized per seed, varying between 1:0.75 and 1:1.25 for Metal→Gas and Metal→Crystal. Ratios change gradually over the season using layered sine waves (no sudden spikes). The engine converts surplus/deficit to metal-equivalent using the current hour's ratios. Trade RNG is offset from mining RNG (`seed ^ 0xbeef`).
 - **Stardust efficiency:** New L1 building (300K, +1/hr) is 3x more efficient than upgrading L1→L2 (900K, +1/hr). Fill slots before upgrading.
+- **USD value model:** Total USD = (stardust × STAR price) + (tier SOL reward × SOL price). Tier thresholds: Explorer ≥15M LP (0.8 SOL), Diamond ≥10M (0.3), Platinum ≥7M (0.16), Gold ≥4M (0.12), Silver ≥2.5M (0.06), Bronze (0.03). The Explorer tier jump is worth $46.50 at SOL=$93, so maintaining ≥15M LP is critical for USD optimization.
 
 ## Test Case Validation
 

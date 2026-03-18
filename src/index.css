@@ -71,12 +71,13 @@ body {
 }
 
 /* ── Tier badges (kept as custom classes — complex color combos) ── */
-.tier-explorer { background: #fbbf24; color: #000; }
+.tier-explorer { background: #ffe100; color: #000; }
 .tier-diamond { background: #60a5fa; color: #000; }
 .tier-platinum { background: #a78bfa; color: #000; }
 .tier-gold { background: #f59e0b; color: #000; }
 .tier-silver { background: #94a3b8; color: #000; }
 .tier-bronze { background: #b45309; color: #fff; }
+.tier-none   { background: #4b5563; color: #9ca3af; }
 
 /* ── Toggle switch (pseudo-element based — keep as CSS) ── */
 .toggle-switch {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildAgenda,
   formatAgendaAsText,
+  formatAgendaAsICS,
   mapSimHourToRealTime,
   isAwakeHour,
 } from './agendaUtils';
@@ -302,4 +303,341 @@ describe('scenario feasibility through agenda export', () => {
       });
     });
   }
+});
+
+// ===========================================================================
+// 4. formatAgendaAsICS — validated against corrected reference output:
+//
+//   BEGIN:VEVENT
+//   DTSTART;TZID=Europe/Amsterdam:20260320T160000
+//   DTEND;TZID=Europe/Amsterdam:20260320T160500
+//   DTSTAMP:20260317T120000Z
+//   SUMMARY:Trade + Build metal L1
+//   DESCRIPTION:H0 — Trade + Build metal L1
+//   UID:colony-sim-custom-strategy-h0@colony-simulator
+//   END:VEVENT
+// ===========================================================================
+describe('formatAgendaAsICS', () => {
+  // A single entry matching the reference output scenario:
+  // Season start = Friday 2026-03-20 16:00, sim hour 0, action = "Trade + Build metal L1"
+  const refEntry = {
+    realTime: SEASON_START,
+    displayTime: '16:00',
+    simHour: 0,
+    actions: ['Trade + Build metal L1'],
+    isWakeUp: false,
+  };
+
+  it('wraps output in VCALENDAR begin/end', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('BEGIN:VCALENDAR');
+    expect(ics).toContain('END:VCALENDAR');
+    expect(ics.trimStart().startsWith('BEGIN:VCALENDAR')).toBe(true);
+  });
+
+  it('contains VERSION and PRODID headers', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('VERSION:2.0');
+    expect(ics).toContain('PRODID:');
+  });
+
+  it('includes a VEVENT for the Trade + Build action', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('BEGIN:VEVENT');
+    expect(ics).toContain('END:VEVENT');
+  });
+
+  it('DTSTART has TZID=Europe/Amsterdam and correct date-time', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('DTSTART;TZID=Europe/Amsterdam:20260320T160000');
+  });
+
+  it('DTEND has TZID=Europe/Amsterdam and is 5 minutes after DTSTART', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('DTEND;TZID=Europe/Amsterdam:20260320T160500');
+  });
+
+  it('DTSTAMP is present in UTC format (YYYYMMDDTHHmmssZ)', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toMatch(/DTSTAMP:\d{8}T\d{6}Z/);
+  });
+
+  it('field order within VEVENT: DTSTART → DTEND → DTSTAMP → SUMMARY → DESCRIPTION → UID', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    const dtStart  = ics.indexOf('\r\nDTSTART');
+    const dtEnd    = ics.indexOf('\r\nDTEND');
+    const dtstamp  = ics.indexOf('\r\nDTSTAMP');
+    const summary  = ics.indexOf('\r\nSUMMARY');
+    const desc     = ics.indexOf('\r\nDESCRIPTION');
+    const uid      = ics.indexOf('\r\nUID');
+    expect(dtStart).toBeLessThan(dtEnd);
+    expect(dtEnd).toBeLessThan(dtstamp);
+    expect(dtstamp).toBeLessThan(summary);
+    expect(summary).toBeLessThan(desc);
+    expect(desc).toBeLessThan(uid);
+  });
+
+  it('SUMMARY contains the action text', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('SUMMARY:Trade + Build metal L1');
+  });
+
+  it('DESCRIPTION contains simHour em-dash and action text', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('DESCRIPTION:H0 \u2014 Trade + Build metal L1');
+  });
+
+  it('UID follows colony-sim-{scenarioName}-h{simHour}@colony-simulator', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    expect(ics).toContain('UID:colony-sim-custom-strategy-h0@colony-simulator');
+  });
+
+  it('uses CRLF line endings throughout', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Custom Strategy');
+    // Every line break should be CRLF
+    const withoutCRLF = ics.replace(/\r\n/g, '');
+    expect(withoutCRLF).not.toContain('\n');
+    expect(withoutCRLF).not.toContain('\r');
+  });
+
+  it('excludes entries with only non-build/upgrade actions (e.g. mining check-ins)', () => {
+    const miningEntry = {
+      realTime: SEASON_START,
+      displayTime: '16:00',
+      simHour: 4,
+      actions: ['Mine (~14 energy)'],
+      isWakeUp: false,
+    };
+    const ics = formatAgendaAsICS([miningEntry], 'Custom Strategy');
+    expect(ics).not.toContain('BEGIN:VEVENT');
+  });
+
+  it('excludes Season Start entry (no Build or Upgrade keyword)', () => {
+    const startEntry = {
+      realTime: SEASON_START,
+      displayTime: '16:00',
+      simHour: 0,
+      actions: ['Season Start'],
+      isWakeUp: false,
+    };
+    const ics = formatAgendaAsICS([startEntry], 'Custom Strategy');
+    expect(ics).not.toContain('BEGIN:VEVENT');
+  });
+
+  it('includes Trade + Upgrade actions', () => {
+    const upgradeEntry = {
+      realTime: SEASON_START,
+      displayTime: '16:00',
+      simHour: 5,
+      actions: ['Trade + Upgrade metal[0] to L2'],
+      isWakeUp: false,
+    };
+    const ics = formatAgendaAsICS([upgradeEntry], 'Custom Strategy');
+    expect(ics).toContain('SUMMARY:Trade + Upgrade metal[0] to L2');
+    expect(ics).toContain('DESCRIPTION:H5 \u2014 Trade + Upgrade metal[0] to L2');
+  });
+
+  it('only the build/upgrade action appears in SUMMARY when entry has mixed actions', () => {
+    const mixedEntry = {
+      realTime: SEASON_START,
+      displayTime: '16:00',
+      simHour: 0,
+      actions: ['Season Start', 'Trade + Build metal L1'],
+      isWakeUp: false,
+    };
+    const ics = formatAgendaAsICS([mixedEntry], 'Custom Strategy');
+    expect(ics).toContain('SUMMARY:Trade + Build metal L1');
+    expect(ics).not.toContain('Season Start');
+  });
+
+  it('produces one VEVENT per entry that has build actions (not per action)', () => {
+    const entries = [
+      { ...refEntry, simHour: 0, realTime: SEASON_START },
+      {
+        realTime: new Date(SEASON_START.getTime() + 5 * 3600 * 1000),
+        displayTime: '21:00',
+        simHour: 5,
+        actions: ['Upgrade metal[0] to L2'],
+        isWakeUp: false,
+      },
+    ];
+    const ics = formatAgendaAsICS(entries, 'Custom Strategy');
+    const veventCount = (ics.match(/BEGIN:VEVENT/g) || []).length;
+    expect(veventCount).toBe(2);
+  });
+});
+
+// ===========================================================================
+// 5. RFC 5545 compliance — AC1–AC21
+// ===========================================================================
+describe('formatAgendaAsICS — RFC 5545 compliance', () => {
+  // Helpers
+  // Unfold RFC 5545 folded lines so assertions can match full field values
+  function unfoldICS(ics) {
+    return ics.replace(/\r\n[ \t]/g, '');
+  }
+
+  function getAllFieldValues(ics, fieldName) {
+    const unfolded = unfoldICS(ics);
+    const re = new RegExp(`^${fieldName}(?:;[^:]+)?:(.+)$`, 'gm');
+    return [...unfolded.matchAll(re)].map(m => m[1]);
+  }
+
+  const makeEntry = (simHour, actions) => ({
+    realTime: new Date(SEASON_START.getTime() + simHour * 3600 * 1000),
+    displayTime: String(simHour),
+    simHour,
+    actions,
+    isWakeUp: false,
+  });
+
+  const refEntry = makeEntry(0, ['Trade + Build metal L1']);
+
+  // A long action that forces line-folding (> 75 octets in SUMMARY/DESCRIPTION)
+  const LONG_ACTION = 'Trade + Upgrade metal[0] to L2 (originally H82, shifted from sleep to next wake-up window)';
+  const longEntry = makeEntry(0, [LONG_ACTION]);
+
+  // Scenario name with chars that are illegal in UIDs
+  const SPECIAL_SCENARIO = 'Scenario 4: Optimal (Recommended)';
+
+  // --- AC3: calendar-level metadata ---
+  it('includes CALSCALE:GREGORIAN (AC3)', () => {
+    expect(formatAgendaAsICS([refEntry], 'Test')).toContain('CALSCALE:GREGORIAN');
+  });
+
+  it('includes METHOD:PUBLISH (AC3)', () => {
+    expect(formatAgendaAsICS([refEntry], 'Test')).toContain('METHOD:PUBLISH');
+  });
+
+  it('CALSCALE and METHOD appear before the first VEVENT (AC3)', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Test');
+    const calscalePos = ics.indexOf('CALSCALE');
+    const veventPos   = ics.indexOf('BEGIN:VEVENT');
+    expect(calscalePos).toBeGreaterThan(0);
+    expect(calscalePos).toBeLessThan(veventPos);
+  });
+
+  // --- AC9: UID uniqueness ---
+  it('each UID is unique within the file (AC9)', () => {
+    const entries = [
+      makeEntry(0,  ['Build metal L1']),
+      makeEntry(5,  ['Upgrade metal[0] to L2']),
+      makeEntry(20, ['Trade + Build Stardust L1']),
+    ];
+    const uids = getAllFieldValues(formatAgendaAsICS(entries, 'Test'), 'UID');
+    expect(uids.length).toBe(3);
+    expect(new Set(uids).size).toBe(3);
+  });
+
+  // --- AC10: UID allowed characters ---
+  it('UIDs only contain letters, digits, -, _, ., @ (AC10)', () => {
+    const uids = getAllFieldValues(formatAgendaAsICS([refEntry], SPECIAL_SCENARIO), 'UID');
+    expect(uids.length).toBeGreaterThan(0);
+    for (const uid of uids) {
+      expect(uid, `UID "${uid}" contains disallowed chars`).toMatch(/^[A-Za-z0-9\-_.@]+$/);
+    }
+  });
+
+  // --- AC11: UID disallowed characters ---
+  it('UIDs do not contain :, (, ), comma, or spaces (AC11)', () => {
+    const uids = getAllFieldValues(formatAgendaAsICS([refEntry], SPECIAL_SCENARIO), 'UID');
+    for (const uid of uids) {
+      expect(uid).not.toMatch(/[:()\s,]/);
+    }
+  });
+
+  it('colons from scenario name like "Scenario 4: Optimal" are removed from UID (AC11)', () => {
+    const uids = getAllFieldValues(formatAgendaAsICS([refEntry], SPECIAL_SCENARIO), 'UID');
+    expect(uids[0]).not.toContain(':');
+  });
+
+  // --- AC12: Text escaping ---
+  it('commas in action text are escaped as \\, in SUMMARY (AC12)', () => {
+    const entry = makeEntry(0, ['Build metal L1, crystal L1']);
+    const unfolded = unfoldICS(formatAgendaAsICS([entry], 'Test'));
+    const line = unfolded.split('\r\n').find(l => l.startsWith('SUMMARY:'));
+    expect(line).toContain('\\,');
+  });
+
+  it('commas in action text are escaped as \\, in DESCRIPTION (AC12)', () => {
+    const entry = makeEntry(0, ['Build metal L1, crystal L1']);
+    const unfolded = unfoldICS(formatAgendaAsICS([entry], 'Test'));
+    const line = unfolded.split('\r\n').find(l => l.startsWith('DESCRIPTION:'));
+    expect(line).toContain('\\,');
+  });
+
+  it('semicolons in action text are escaped as \\; (AC12)', () => {
+    const entry = makeEntry(0, ['Build metal L1; upgrade stardust']);
+    const unfolded = unfoldICS(formatAgendaAsICS([entry], 'Test'));
+    const summary = unfolded.split('\r\n').find(l => l.startsWith('SUMMARY:'));
+    expect(summary).toContain('\\;');
+  });
+
+  it('backslashes in action text are doubled to \\\\ (AC12)', () => {
+    const entry = makeEntry(0, ['Build metal\\crystal']);
+    const unfolded = unfoldICS(formatAgendaAsICS([entry], 'Test'));
+    const summary = unfolded.split('\r\n').find(l => l.startsWith('SUMMARY:'));
+    expect(summary).toContain('\\\\');
+  });
+
+  // --- AC14: Line length ---
+  it('no line exceeds 75 octets (AC14)', () => {
+    const ics = formatAgendaAsICS([longEntry], SPECIAL_SCENARIO);
+    const encoder = new TextEncoder();
+    for (const line of ics.split('\r\n')) {
+      expect(
+        encoder.encode(line).length,
+        `line exceeds 75 octets: "${line}"`,
+      ).toBeLessThanOrEqual(75);
+    }
+  });
+
+  // --- AC15: Line folding ---
+  it('lines longer than 75 octets are folded with a leading space (AC15)', () => {
+    const ics = formatAgendaAsICS([longEntry], 'Test');
+    const lines = ics.split('\r\n');
+    const continuationLines = lines.filter(l => l.startsWith(' '));
+    expect(continuationLines.length, 'expected at least one folded continuation line').toBeGreaterThan(0);
+  });
+
+  it('unfolding a folded ICS restores the full field value intact (AC15)', () => {
+    const ics = formatAgendaAsICS([longEntry], 'Test');
+    const unfolded = unfoldICS(ics);
+    // The comma in the action should be escaped, and the full escaped text present after unfolding
+    const summary = unfolded.split('\r\n').find(l => l.startsWith('SUMMARY:'));
+    expect(summary).toBeDefined();
+    expect(summary).toContain('originally H82\\,');
+    expect(summary).toContain('next wake-up window');
+  });
+
+  // --- AC16: Multiline descriptions ---
+  it('multiple build actions in DESCRIPTION use \\n as line separator (AC16)', () => {
+    const entry = makeEntry(0, ['Build metal L1', 'Upgrade stardust to L2']);
+    const unfolded = unfoldICS(formatAgendaAsICS([entry], 'Test'));
+    const desc = unfolded.split('\r\n').find(l => l.startsWith('DESCRIPTION:'));
+    expect(desc).toContain('\\n');
+  });
+
+  // --- AC17: Multi-action SUMMARY ---
+  it('multiple build actions in SUMMARY are all present (AC17)', () => {
+    const entry = makeEntry(0, ['Build metal L1', 'Upgrade stardust to L2']);
+    const unfolded = unfoldICS(formatAgendaAsICS([entry], 'Test'));
+    const summary = unfolded.split('\r\n').find(l => l.startsWith('SUMMARY:'));
+    expect(summary).toContain('Build metal L1');
+    expect(summary).toContain('Upgrade stardust to L2');
+  });
+
+  // --- AC21: Required fields are non-empty ---
+  it('required event fields UID, DTSTAMP, SUMMARY are non-empty (AC21)', () => {
+    const ics = formatAgendaAsICS([refEntry], 'Test');
+    const unfolded = unfoldICS(ics);
+    for (const field of ['UID', 'DTSTAMP', 'SUMMARY']) {
+      const vals = getAllFieldValues(ics, field);
+      expect(vals.length, `${field} should be present`).toBeGreaterThan(0);
+      expect(vals[0].trim(), `${field} should not be empty`).not.toBe('');
+    }
+    // DTSTART / DTEND use property parameters — check via regex
+    expect(unfolded).toMatch(/DTSTART;[^:]+:\S/);
+    expect(unfolded).toMatch(/DTEND;[^:]+:\S/);
+  });
 });
