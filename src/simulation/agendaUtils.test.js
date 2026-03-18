@@ -274,6 +274,58 @@ describe('buildAgenda with saveEnergy + awake hours combined', () => {
   });
 });
 
+describe('buildAgenda saveEnergy — mining activity must not show Skip mining', () => {
+  // Scenario: metal upgrade at H15 with high energy → noMineHours = {5..14}.
+  // H12 has real mining (4 actions). The agenda must show the mining count for H12
+  // and must NOT say "Skip mining (saving energy for upcoming metal upgrade)".
+  const ENERGY_PER_HOUR_VAL = 50 / 14; // ~3.571
+
+  const actionLog = [
+    { hour: 0,  action: 'Build metal L1' },
+    { hour: 15, action: 'Upgrade metal[0] to L2' },
+  ];
+  // Energy at H15 is 20 (> ENERGY_PER_HOUR*2) → upgrade triggers noMineHours detection
+  const timeline = [
+    { hour: 0, energy: 50 },
+    ...Array.from({ length: 14 }, (_, i) => ({ hour: i + 1, energy: 5 })),
+    { hour: 15, energy: 20 },
+  ];
+  // H12 had real mining: 4 actions on metals
+  const miningByHour = [
+    { hour: 12, resource: 'metals', actions: 4, metals: 800, gas: 0, crystal: 0 },
+  ];
+
+  it('shows Mine count at H12 even though H12 is in the noMineHours zone', () => {
+    const entries = buildAgenda(actionLog, timeline, SEASON_START, {
+      enabled: false, awakeStart: 7, awakeEnd: 23,
+    }, { saveEnergy: true, miningByHour });
+
+    // Find the entry that covers H12 (the first check-in after H8 that reaches H12)
+    const mineEntry = entries.find(e =>
+      e.simHour >= 12 && e.simHour <= 15 && e.actions.some(a => /Mine metals \d+ times/.test(a)),
+    );
+    expect(mineEntry).toBeDefined();
+    expect(mineEntry.actions.some(a => /Mine metals \d+ times/.test(a))).toBe(true);
+  });
+
+  it('does NOT show "Skip mining" at any hour where mining actually occurred', () => {
+    const entries = buildAgenda(actionLog, timeline, SEASON_START, {
+      enabled: false, awakeStart: 7, awakeEnd: 23,
+    }, { saveEnergy: true, miningByHour });
+
+    // Collect all entries that say Skip mining
+    const skipEntries = entries.filter(e =>
+      e.actions.some(a => a.includes('Skip mining (saving energy for upcoming metal upgrade)')),
+    );
+
+    // None of those hours should have had mining activity
+    for (const entry of skipEntries) {
+      const mined = miningByHour.find(m => m.hour === entry.simHour && m.actions > 0);
+      expect(mined).toBeUndefined();
+    }
+  });
+});
+
 describe('buildAgenda saveEnergy with real simulation data', () => {
   it('produces save-energy annotations from a full strategyMaxMetal run', async () => {
     const { simulate } = await import('./engine');
@@ -286,10 +338,6 @@ describe('buildAgenda saveEnergy with real simulation data', () => {
       enabled: false, awakeStart: 7, awakeEnd: 23,
     }, { saveEnergy: true });
 
-    // Should have at least one metal upgrade with post-upgrade mining annotation
-    const annotated = entries.filter(e =>
-      e.actions.some(a => a.includes('after upgrade')),
-    );
     // May or may not have annotations depending on energy at upgrade time,
     // but the agenda should at minimum produce valid entries
     expect(entries.length).toBeGreaterThan(0);
@@ -312,6 +360,35 @@ describe('buildAgenda saveEnergy with real simulation data', () => {
       expect(entry.simHour).toBeGreaterThanOrEqual(0);
       expect(entry.simHour).toBeLessThanOrEqual(168);
       expect(entry.actions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('never shows "Skip mining" at hours where real mining occurred (saveEnergyBeforeUpgrade: true)', async () => {
+    const { simulate } = await import('./engine');
+    const { strategyMaxMetal } = await import('./strategies');
+
+    const seed = 42;
+    const result = simulate(strategyMaxMetal, seed, { saveEnergyBeforeUpgrade: true });
+
+    // Build a lookup: simHour → mining action count
+    const miningCountBySimHour = new Map();
+    for (const m of result.miningByHour) {
+      if (m.actions > 0) miningCountBySimHour.set(m.hour, m.actions);
+    }
+
+    // Confirm the simulation actually produced some mining hours to test against
+    expect(miningCountBySimHour.size).toBeGreaterThan(0);
+
+    const entries = buildAgenda(result.actionLog, result.timeline, SEASON_START, {
+      enabled: false, awakeStart: 7, awakeEnd: 23,
+    }, { saveEnergy: true, miningByHour: result.miningByHour });
+
+    // Any entry that says "Skip mining" must not cover a sim hour that had mining
+    const skipEntries = entries.filter(e =>
+      e.actions.some(a => a.includes('Skip mining (saving energy for upcoming metal upgrade)')),
+    );
+    for (const entry of skipEntries) {
+      expect(miningCountBySimHour.has(entry.simHour)).toBe(false);
     }
   });
 });

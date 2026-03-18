@@ -304,7 +304,7 @@ describe('Production after each building level', () => {
 
 describe('Save energy before upgrade toggle', () => {
   // Minimal strategy: build metal L1 at hour 0, request upgrade to L2 every hour after
-  function strategyUpgradeOnly(hour, resources, buildings, production, totalBuildings) {
+  function strategyUpgradeOnly(hour, resources, buildings, _production, _totalBuildings) {
     if (buildings.metal.length === 0) {
       return [{ type: 'build', buildingType: 'metal' }];
     }
@@ -420,10 +420,32 @@ describe('Save energy before upgrade toggle', () => {
     }
   });
 
+  it('energy never exceeds MAX_ENERGY (50) and mining actions per hour never exceed MAX_ENERGY when saveEnergy is on', () => {
+    // When mining is skipped to accumulate energy before an upgrade, energy regens each
+    // hour but must stay capped at MAX_ENERGY. Additionally, because mining can only
+    // spend the energy that was available at the start of that hour, the number of mining
+    // actions in any single hour must never exceed MAX_ENERGY — catching the forbidden
+    // case where mining fires twice in one hour (e.g. 47 actions + 47 actions again after
+    // the upgrade executes).
+    const seed = 42;
+
+    for (const strat of [strategyUpgradeOnly, strategyMaxMetal, strategyOptimal]) {
+      const result = simulate(strat, seed, { saveEnergyBeforeUpgrade: true });
+
+      for (const snap of result.timeline) {
+        expect(snap.energy).toBeLessThanOrEqual(MAX_ENERGY);
+      }
+
+      for (const entry of result.miningByHour) {
+        expect(entry.actions).toBeLessThanOrEqual(MAX_ENERGY);
+      }
+    }
+  });
+
   it('does not skip mining when upgrade is affordable immediately', () => {
     // Strategy that requests an upgrade the player can already afford
     // shouldSaveEnergy should return false when totalRes >= totalCost
-    function strategyAffordable(hour, resources, buildings, production, totalBuildings) {
+    function strategyAffordable(hour, resources, buildings, _production, _totalBuildings) {
       if (hour === 0) {
         return [{ type: 'build', buildingType: 'metal' }];
       }

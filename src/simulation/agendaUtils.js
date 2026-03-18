@@ -247,8 +247,13 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
 
     if (hasActions) {
       const augmentedActions = [];
-      if (accMineCount > 0) {
-        augmentedActions.push(`Mine ${accMineRes} ${accMineCount} times`);
+      // When saveEnergy mode has a post-upgrade mining annotation for this hour,
+      // exclude the current hour's mining from the accumulated count (it's shown separately below).
+      const displayMineCount = (saveEnergy && upgradeEnergyInfo.has(h))
+        ? accMineCount - (miningCountByHour.get(h) || 0)
+        : accMineCount;
+      if (displayMineCount > 0) {
+        augmentedActions.push(`Mine ${accMineRes} ${displayMineCount} times`);
       }
       augmentedActions.push(...hourActions);
 
@@ -270,7 +275,7 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
         miningNote: null,
         isWakeUp: false,
       });
-    } else if (shouldMiningCheckin && !(saveEnergy && noMineHours.has(h))) {
+    } else if (shouldMiningCheckin && (accMineCount > 0 || !(saveEnergy && noMineHours.has(h)))) {
       const energyAccum = Math.round(hoursSinceLastEntry * ENERGY_PER_HOUR);
       entries.push({
         realTime: new Date(realTime),
@@ -283,7 +288,7 @@ export function buildAgenda(actionLog, timeline, seasonStart, awakeConfig, optio
         miningNote: `~${energyAccum} energy accumulated`,
         isWakeUp: false,
       });
-    } else if (saveEnergy && noMineHours.has(h) && shouldMiningCheckin) {
+    } else if (saveEnergy && noMineHours.has(h) && shouldMiningCheckin && accMineCount === 0) {
       // Show a "save energy" reminder instead of a mining check-in
       entries.push({
         realTime: new Date(realTime),
@@ -427,7 +432,7 @@ function foldICSLine(line) {
     : null;
   const byteLen = (s) => encoder
     ? encoder.encode(s).length
-    : Buffer.byteLength(s, 'utf8');
+    : s.length;
 
   if (byteLen(line) <= 75) return line;
 

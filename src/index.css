@@ -108,6 +108,33 @@ input:checked + .toggle-switch::after {
   background: #fff;
 }
 
+/* ── Scrollbars ── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-inset);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
+}
+
+/* ── Number input spinners ── */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  filter: invert(0.7); /* dark: white→gray */
+}
+[data-theme="light"] input[type="number"]::-webkit-inner-spin-button,
+[data-theme="light"] input[type="number"]::-webkit-outer-spin-button {
+  filter: invert(0.3); /* light: dark→softer */
+}
+
 /* ── Keyframe animation ── */
 @keyframes warningFadeIn {
   from { opacity: 0; transform: translateY(-4px); }

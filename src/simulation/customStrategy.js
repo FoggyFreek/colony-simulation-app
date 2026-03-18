@@ -11,7 +11,7 @@ export function createCustomStrategy(actionQueue) {
   // Track expected building state so we can detect when an action completes
   let expectedBuildings = null;
 
-  return function customStrategy(hour, resources, buildings, production, totalBuildings) {
+  return function customStrategy(hour, resources, buildings, _production, _totalBuildings) {
     if (done) return [];
 
     // On first call, initialize expected state
@@ -66,7 +66,7 @@ function didActionComplete(queueItem, currentBuildings, expectedBuildings) {
   }
 }
 
-function buildEngineAction(queueItem, expectedBuildings) {
+function buildEngineAction(queueItem, _expectedBuildings) {
   const { buildingType, actionType, slotIndex, targetLevel } = queueItem;
 
   if (buildingType === 'stardust') {

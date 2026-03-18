@@ -26,15 +26,32 @@ npm run lint       # ESLint
 colony-sim/src/
 ├── simulation/           # Pure logic, no React dependency
 │   ├── gameConstants.js  # All game rules: costs, production rates, energy, points
-│   ├── engine.js         # simulate(strategy, seed) → {timeline, actionLog, finalState}
+│   ├── engine.js         # simulate(strategy, seed, options) → {timeline, actionLog, miningByHour, finalState}
 │   ├── strategies.js     # 5 strategy functions + SCENARIOS array
-│   └── engine.test.js    # Validates formulas against colony-testcase.md
+│   ├── customStrategy.js # User-configurable custom strategy
+│   ├── agendaUtils.js    # buildAgenda(), formatAgendaAsText(), formatAgendaAsICS(), time helpers
+│   ├── engine.test.js    # Validates formulas against colony-testcase.md
+│   ├── agendaUtils.test.js
+│   ├── agendaExport.test.js
+│   └── customStrategy.test.js
 ├── components/           # Presentational React components (charts, cards, logs)
 ├── App.jsx               # State management: activeScenario, seed → useMemo(simulate)
 └── index.css             # Tailwind v4 import + CSS custom properties for dark/light theme
 ```
 
 **Data flow:** `App.jsx` calls `simulate()` for each of the 5 strategies on seed change. Each strategy is a function `(hour, resources, buildings, production, totalBuildings) → actions[]` called every simulated hour. The engine executes actions (build, upgrade, trade+upgrade) and records timeline snapshots.
+
+**`simulate()` options:**
+- `saveEnergyBeforeUpgrade` (bool) — when true, strategy runs before mining each hour so upgrades happen first; the engine also skips mining in hours where a utility upgrade is imminent (within 10h), then mines at the higher post-upgrade production rate.
+- `tradeRatioAmplitude` — overrides the trade ratio variance amplitude.
+
+**`simulate()` return value:**
+- `timeline` — hourly snapshots of all state
+- `actionLog` — flat `[{hour, action: string}]` of every build/upgrade/trade event
+- `miningByHour` — `[{hour, resource, actions, metals, gas, crystal}]` per hour
+- `finalState` — end-of-season resources, production, buildings, points
+
+**Agenda / export layer** (`agendaUtils.js`): post-processing step separate from the engine. `buildAgenda(actionLog, timeline, seasonStart, awakeConfig, options)` maps sim hours to real wall-clock times and produces agenda entries. Handles sleep/wake scheduling — sleep hours accumulate energy and shift actions to a batched wake-up entry. `formatAgendaAsText()` and `formatAgendaAsICS()` convert entries to plain text or iCalendar format (ICS filtered to build/upgrade events only).
 
 **Seeded RNG:** The engine uses a linear congruential generator so mining variance is reproducible per seed. The UI exposes a seed control to randomize.
 
@@ -51,11 +68,10 @@ Three things are kept as plain CSS in `index.css` (Tailwind cannot express them)
 
 ## Key Game Mechanics (Metal Planet)
 
-- **Mining formula:** `hourly_production * 0.02` per mine action (not 0.2% of daily). Verified against test case.
+- **Mining formula:** `daily production * 0.002` 0.2% of daily per mine action.
 - **Energy regen:** Exactly `3.571` per hour (game truncates 50/14). At hour 7 this gives energy=3.997 (floor=3), not 4.0.
 - **Trade ratios:** Randomized per seed, varying between 1:0.75 and 1:1.25 for Metal→Gas and Metal→Crystal. Ratios change gradually over the season using layered sine waves (no sudden spikes). The engine converts surplus/deficit to metal-equivalent using the current hour's ratios. Trade RNG is offset from mining RNG (`seed ^ 0xbeef`).
-- **Stardust efficiency:** New L1 building (300K, +1/hr) is 3x more efficient than upgrading L1→L2 (900K, +1/hr). Fill slots before upgrading.
-- **USD value model:** Total USD = (stardust × STAR price) + (tier SOL reward × SOL price). Tier thresholds: Explorer ≥15M LP (0.8 SOL), Diamond ≥10M (0.3), Platinum ≥7M (0.16), Gold ≥4M (0.12), Silver ≥2.5M (0.06), Bronze (0.03). The Explorer tier jump is worth $46.50 at SOL=$93, so maintaining ≥15M LP is critical for USD optimization.
+- **USD value model:** Total USD = (stardust × STAR price) + (tier SOL reward × SOL price). Tier thresholds: Explorer ≥26M LP (0.8 SOL), Diamond ≥24M (0.3), Platinum ≥18M (0.16), Gold ≥16M (0.12), Silver ≥14M (0.06), Bronze ≥10M (0.03). The Explorer tier jump is worth ~$47 at SOL=$94, so maximizing LP is critical for USD optimization.
 
 ## Test Case Validation
 

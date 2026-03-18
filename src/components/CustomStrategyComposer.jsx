@@ -36,13 +36,13 @@ export default function CustomStrategyComposer({ actionQueue, setActionQueue, si
       return;
     }
     if (hasOverflow && !prevHasOverflowRef.current) {
-      setOverflowWarning('One or more actions do not fit within the 168-hour season.');
-      const timer = setTimeout(() => setOverflowWarning(null), 4000);
       prevHasOverflowRef.current = true;
-      return () => clearTimeout(timer);
+      const showTimer = setTimeout(() => setOverflowWarning('One or more actions do not fit within the 168-hour season.'), 0);
+      const hideTimer = setTimeout(() => setOverflowWarning(null), 4000);
+      return () => { clearTimeout(showTimer); clearTimeout(hideTimer); };
     }
     if (!hasOverflow && prevHasOverflowRef.current) {
-      setOverflowWarning(null);
+      setTimeout(() => setOverflowWarning(null), 0);
     }
     prevHasOverflowRef.current = !!hasOverflow;
   }, [hasOverflow]);

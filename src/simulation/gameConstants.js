@@ -98,12 +98,12 @@ export const BUILDING_COST_MAP = {
 };
 
 export const TIERS = [
-  { min: 16000000, name: 'Explorer',  cls: 'tier-explorer',  pct: 'Top 1%',  sol: 0.8  },
-  { min: 12500000, name: 'Diamond',   cls: 'tier-diamond',   pct: 'Top 5%',  sol: 0.3  },
-  { min: 11000000, name: 'Platinum',  cls: 'tier-platinum',  pct: 'Top 10%', sol: 0.16 },
-  { min: 10000000, name: 'Gold',      cls: 'tier-gold',      pct: 'Top 30%', sol: 0.12 },
-  { min: 9500000, name: 'Silver',    cls: 'tier-silver',    pct: 'Top 50%', sol: 0.06 },
-  { min: 5000000, name: 'Bronze',    cls: 'tier-bronze',    pct: 'Top 70%', sol: 0.03 },
+  { min: 26000000, name: 'Explorer',  cls: 'tier-explorer',  pct: 'Top 1%',  sol: 0.8  },
+  { min: 24000000, name: 'Diamond',   cls: 'tier-diamond',   pct: 'Top 5%',  sol: 0.3  },
+  { min: 18000000, name: 'Platinum',  cls: 'tier-platinum',  pct: 'Top 10%', sol: 0.16 },
+  { min: 16000000, name: 'Gold',      cls: 'tier-gold',      pct: 'Top 30%', sol: 0.12 },
+  { min: 14000000, name: 'Silver',    cls: 'tier-silver',    pct: 'Top 50%', sol: 0.06 },
+  { min: 10000000, name: 'Bronze',    cls: 'tier-bronze',    pct: 'Top 70%', sol: 0.03 },
 ];
 
 const NO_TIER = { min: 0, name: 'No Tier', cls: 'tier-none', pct: 'Bottom 30%', sol: 0 };

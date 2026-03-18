@@ -88,6 +88,7 @@ function App() {
   const [activeScenario, setActiveScenario] = useState('optimal');
   const [seed, setSeed] = useState(42);
   const [saveEnergy, setSaveEnergy] = useState(false);
+  const [saveEnergyThreshold, setSaveEnergyThreshold] = useState(10);
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem('colony-theme') || 'dark';
@@ -119,7 +120,7 @@ function App() {
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   const results = useMemo(() => {
-    const opts = { saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude };
+    const opts = { saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude, saveEnergyThreshold };
     const r = {};
     for (const scenario of SCENARIOS) {
       r[scenario.id] = simulate(scenario.strategy, seed, opts);
@@ -128,7 +129,7 @@ function App() {
       r['custom'] = simulate(createCustomStrategy(customActionQueue), seed, opts);
     }
     return r;
-  }, [seed, saveEnergy, customActionQueue, tradeRatioAmplitude]);
+  }, [seed, saveEnergy, saveEnergyThreshold, customActionQueue, tradeRatioAmplitude]);
 
   const active = ALL_SCENARIOS.find(s => s.id === activeScenario) || ALL_SCENARIOS[0];
   const activeResult = results[activeScenario];
@@ -207,16 +208,32 @@ function App() {
           </div>
         </div>
         <div className="flex flex-col items-center gap-1 mt-3">
-          <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[var(--color-text)] select-none">
-            <input
-              type="checkbox"
-              checked={saveEnergy}
-              onChange={e => setSaveEnergy(e.target.checked)}
-              className="hidden"
-            />
-            <span className="toggle-switch" />
-            Save up energy before upgrade
-          </label>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[var(--color-text)] select-none">
+              <input
+                type="checkbox"
+                checked={saveEnergy}
+                onChange={e => setSaveEnergy(e.target.checked)}
+                className="hidden"
+              />
+              <span className="toggle-switch" />
+              Save up energy before upgrade
+            </label>
+            {saveEnergy && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs text-[var(--color-muted)]">within</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={saveEnergyThreshold}
+                  onChange={e => setSaveEnergyThreshold(Math.max(1, Math.min(50, Number(e.target.value))))}
+                  className="bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-1.5 py-0.5 rounded w-14 text-xs focus:outline-none focus:border-[var(--color-accent)]"
+                />
+                <label className="text-xs text-[var(--color-muted)]">hrs</label>
+              </div>
+            )}
+          </div>
           <span className="text-xs text-[var(--color-faint)]">
             Skip mining before metal upgrades, then mine at higher production rate
           </span>

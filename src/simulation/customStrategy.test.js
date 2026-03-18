@@ -42,8 +42,8 @@ describe('createCustomStrategy + simulate', () => {
 
     expect(result.finalState.buildings.metal[0]).toBe(3);
 
-    // Actions should appear in chronological order
-    const metalActions = result.actionLog.filter(e => e.action.includes('metal'));
+    // Actions should appear in chronological order (exclude trade log entries)
+    const metalActions = result.actionLog.filter(e => e.action.match(/^(Build|Upgrade) metal/));
     expect(metalActions.length).toBe(3);
     expect(metalActions[0].hour).toBeLessThan(metalActions[1].hour);
     expect(metalActions[1].hour).toBeLessThan(metalActions[2].hour);

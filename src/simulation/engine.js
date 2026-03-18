@@ -2,7 +2,7 @@ import {
   SEASON_HOURS, STARTING_RESOURCES, BASE_PRODUCTION, BUILDING_SLOTS,
   BUILDING_PRODUCTION, STARDUST_BUILDING_PRODUCTION,
   BUILDING_COST_MAP, ENERGY_PER_HOUR,
-  MINING_JACKPOT_CHANCE, MINING_JACKPOT_MULTIPLIER, MINING_VARIANCE,
+  MINING_REWARD_RATE, MINING_JACKPOT_CHANCE, MINING_JACKPOT_MULTIPLIER, MINING_VARIANCE,
   MAX_ENERGY, STARDUST_POINTS_PER_UNIT,
   BUILDING_UPGRADE_POINTS, STARDUST_UPGRADE_POINTS,
   TRADE_RATIO_CENTER, TRADE_RATIO_AMPLITUDE,
@@ -55,7 +55,7 @@ function cloneBuildings(buildings) {
 }
 
 export function simulate(strategy, seed = 42, options = {}) {
-  const { saveEnergyBeforeUpgrade = false, tradeRatioAmplitude = TRADE_RATIO_AMPLITUDE } = options;
+  const { saveEnergyBeforeUpgrade = false, tradeRatioAmplitude = TRADE_RATIO_AMPLITUDE, saveEnergyThreshold = 10 } = options;
   const rand = seededRandom(seed);
   const tradeRatios = generateTradeRatios(seed, SEASON_HOURS, tradeRatioAmplitude);
   const timeline = [];
@@ -221,11 +221,12 @@ export function simulate(strategy, seed = 42, options = {}) {
 
     const { metalToGas, metalToCrystal } = tradeRatios[hour];
 
-    // MEQ reward per mine action for each resource
+    // MEQ reward per mine action for each resource (0.2% of daily production)
+    const dailyFactor = 24 * MINING_REWARD_RATE;
     const meqPerMine = {
-      metals: production.metals * 0.02,
-      gas:    production.gas    * 0.02 / metalToGas,
-      crystal: production.crystal * 0.02 / metalToCrystal,
+      metals: production.metals * dailyFactor,
+      gas:    production.gas    * dailyFactor / metalToGas,
+      crystal: production.crystal * dailyFactor / metalToCrystal,
     };
 
     // Pick resource with highest MEQ reward
@@ -233,7 +234,7 @@ export function simulate(strategy, seed = 42, options = {}) {
       .reduce((best, [res, val]) => val > best.val ? { res, val } : best,
               { res: 'metals', val: -Infinity }).res;
 
-    const baseRewardPerMine = production[bestResource] * 0.02;
+    const baseRewardPerMine = production[bestResource] * dailyFactor;
     let totalReward = 0;
     for (let i = 0; i < miningActions; i++) {
       const variance = 1 + (rand() * 2 - 1) * MINING_VARIANCE;
@@ -305,7 +306,7 @@ export function simulate(strategy, seed = 42, options = {}) {
     const hoursToAfford = Math.ceil(deficit / hourlyIncome);
 
     // Save energy if upgrade is within threshold (energy caps at 50, regen ~3.571/hr)
-    return hoursToAfford <= 10;
+    return hoursToAfford <= saveEnergyThreshold;
   }
 
   // Try to trade (if needed) then build or upgrade a building. Returns true on success.
