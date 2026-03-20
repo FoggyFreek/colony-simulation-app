@@ -567,8 +567,11 @@ describe('Save energy with full strategies', () => {
     const resultOff = simulate(strategyOptimal, seed, { saveEnergyBeforeUpgrade: false });
     const resultOn = simulate(strategyOptimal, seed, { saveEnergyBeforeUpgrade: true });
 
-    // Both should complete the simulation
-    expect(resultOff.timeline.length).toBe(resultOn.timeline.length);
+    // Both should complete the full 168-hour simulation
+    expect(resultOff.timeline.length).toBeGreaterThanOrEqual(169);
+    expect(resultOn.timeline.length).toBeGreaterThanOrEqual(169);
+    expect(resultOff.timeline[resultOff.timeline.length - 1].hour).toBe(168);
+    expect(resultOn.timeline[resultOn.timeline.length - 1].hour).toBe(168);
 
     // The energy profiles should differ in at least some hours
     let energyDiffs = 0;

@@ -27,15 +27,15 @@ function generateTradeRatios(seed, totalHours, amplitude = TRADE_RATIO_AMPLITUDE
   const ratios = [];
   for (let h = 0; h <= totalHours; h++) {
     const t = h / totalHours;
-    // Sum of 3 sine waves at low frequencies for smooth variation
+    // Sum of 3 sine waves at higher frequencies for denser price variation
     const gasValue =
-      0.5 * Math.sin(2 * Math.PI * 1 * t + phases[0]) +
-      0.3 * Math.sin(2 * Math.PI * 2 * t + phases[1]) +
-      0.2 * Math.sin(2 * Math.PI * 3 * t + phases[2]);
+      0.5 * Math.sin(2 * Math.PI * 3 * t + phases[0]) +
+      0.3 * Math.sin(2 * Math.PI * 5 * t + phases[1]) +
+      0.2 * Math.sin(2 * Math.PI * 7 * t + phases[2]);
     const crystalValue =
-      0.5 * Math.sin(2 * Math.PI * 1 * t + phases[3]) +
-      0.3 * Math.sin(2 * Math.PI * 2 * t + phases[4]) +
-      0.2 * Math.sin(2 * Math.PI * 3 * t + phases[5]);
+      0.5 * Math.sin(2 * Math.PI * 3 * t + phases[3]) +
+      0.3 * Math.sin(2 * Math.PI * 5 * t + phases[4]) +
+      0.2 * Math.sin(2 * Math.PI * 7 * t + phases[5]);
 
     ratios.push({
       metalToGas: TRADE_RATIO_CENTER + gasValue * amplitude,
@@ -55,7 +55,8 @@ function cloneBuildings(buildings) {
 }
 
 export function simulate(strategy, seed = 42, options = {}) {
-  const { saveEnergyBeforeUpgrade = false, tradeRatioAmplitude = TRADE_RATIO_AMPLITUDE, saveEnergyThreshold = 10 } = options;
+  const { saveEnergyBeforeUpgrade = false, tradeRatioAmplitude = TRADE_RATIO_AMPLITUDE, saveEnergyThreshold = 10, baseProduction } = options;
+  const baseProd = baseProduction || BASE_PRODUCTION;
   const rand = seededRandom(seed);
   const tradeRatios = generateTradeRatios(seed, SEASON_HOURS, tradeRatioAmplitude);
   const timeline = [];
@@ -63,7 +64,7 @@ export function simulate(strategy, seed = 42, options = {}) {
   // State
   let resources = { ...STARTING_RESOURCES };
   let buildings = { metal: [], gas: [], crystal: [], stardust: [] };
-  let production = { ...BASE_PRODUCTION };
+  let production = { ...baseProd };
   let energy = MAX_ENERGY;
   let leaderboardPoints = 0;
   let productionPoints = 0;
@@ -82,10 +83,10 @@ export function simulate(strategy, seed = 42, options = {}) {
   let hourMiningActions = 0;
 
   function recalcProduction() {
-    let metalProd = BASE_PRODUCTION.metals;
-    let gasProd = BASE_PRODUCTION.gas;
-    let crystalProd = BASE_PRODUCTION.crystal;
-    let stardustProd = BASE_PRODUCTION.stardust;
+    let metalProd = baseProd.metals;
+    let gasProd = baseProd.gas;
+    let crystalProd = baseProd.crystal;
+    let stardustProd = baseProd.stardust;
 
     for (const lvl of buildings.metal) metalProd += BUILDING_PRODUCTION[lvl];
     for (const lvl of buildings.gas) gasProd += BUILDING_PRODUCTION[lvl];

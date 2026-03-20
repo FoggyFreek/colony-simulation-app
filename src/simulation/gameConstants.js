@@ -17,6 +17,43 @@ export const BASE_PRODUCTION = {
   stardust: 0,
 };
 
+// Planet types: each planet gives +500 to its primary resource production
+// Starfield gives +0.25 stardust instead of +500 to a resource
+export const PLANET_TYPES = {
+  metallic: {
+    id: 'metallic',
+    label: 'Metallic',
+    primary: 'metal',
+    scarce: 'gas',
+    expensive: 'crystal',
+    baseProduction: { metals: 4500, gas: 4000, crystal: 4000, stardust: 0 },
+  },
+  gaseous: {
+    id: 'gaseous',
+    label: 'Gaseous',
+    primary: 'gas',
+    scarce: 'crystal',
+    expensive: 'metal',
+    baseProduction: { metals: 4000, gas: 4500, crystal: 4000, stardust: 0 },
+  },
+  crystalline: {
+    id: 'crystalline',
+    label: 'Crystalline',
+    primary: 'crystal',
+    scarce: 'metal',
+    expensive: 'gas',
+    baseProduction: { metals: 4000, gas: 4000, crystal: 4500, stardust: 0 },
+  },
+  starfield: {
+    id: 'starfield',
+    label: 'Starfield',
+    primary: 'metal',
+    scarce: 'gas',
+    expensive: 'crystal',
+    baseProduction: { metals: 4000, gas: 4000, crystal: 4000, stardust: 0.25 },
+  },
+};
+
 export const BUILDING_SLOTS = 9;
 
 // Production bonus per building level (cumulative total)

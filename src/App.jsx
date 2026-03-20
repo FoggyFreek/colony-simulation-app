@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { simulate } from './simulation/engine';
-import { SCENARIOS } from './simulation/strategies';
-import { SEASON_HOURS, TRADE_RATIO_AMPLITUDE, TRADE_RATIO_CENTER } from './simulation/gameConstants';
+import { getScenariosForPlanet } from './simulation/strategies';
+import { SEASON_HOURS, TRADE_RATIO_AMPLITUDE, TRADE_RATIO_CENTER, PLANET_TYPES } from './simulation/gameConstants';
 import { createCustomStrategy } from './simulation/customStrategy';
 import TimelineChart from './components/TimelineChart';
 import ActionLog from './components/ActionLog';
@@ -19,7 +19,7 @@ const CUSTOM_SCENARIO = {
   color: '#ec4899',
 };
 
-const ALL_SCENARIOS = [...SCENARIOS, CUSTOM_SCENARIO];
+// allScenarios is now computed inside the component
 
 const CHART_CARD_CLASS = "bg-[var(--color-surface)] rounded-xl p-5 border border-[var(--color-border)] shadow-[var(--shadow-card)]";
 
@@ -85,10 +85,15 @@ function sampleTimeline(timeline) {
 }
 
 function App() {
+  const [planetType, setPlanetType] = useState(() => {
+    try {
+      return localStorage.getItem('colony-planet') || 'metallic';
+    } catch { return 'metallic'; }
+  });
   const [activeScenario, setActiveScenario] = useState('optimal');
   const [seed, setSeed] = useState(42);
   const [saveEnergy, setSaveEnergy] = useState(false);
-  const [saveEnergyThreshold, setSaveEnergyThreshold] = useState(10);
+  const [saveEnergyThreshold, setSaveEnergyThreshold] = useState(2);
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem('colony-theme') || 'dark';
@@ -109,6 +114,13 @@ function App() {
   }, [customActionQueue]);
 
   useEffect(() => {
+    localStorage.setItem('colony-planet', planetType);
+  }, [planetType]);
+
+  const planetConfig = PLANET_TYPES[planetType];
+  const scenarios = useMemo(() => getScenariosForPlanet(planetConfig), [planetConfig]);
+
+  useEffect(() => {
     if (theme === 'light') {
       document.documentElement.setAttribute('data-theme', 'light');
     } else {
@@ -119,19 +131,21 @@ function App() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
+  const allScenarios = useMemo(() => [...scenarios, CUSTOM_SCENARIO], [scenarios]);
+
   const results = useMemo(() => {
-    const opts = { saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude, saveEnergyThreshold };
+    const opts = { saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude, saveEnergyThreshold, baseProduction: planetConfig.baseProduction };
     const r = {};
-    for (const scenario of SCENARIOS) {
+    for (const scenario of scenarios) {
       r[scenario.id] = simulate(scenario.strategy, seed, opts);
     }
     if (customActionQueue.length > 0) {
       r['custom'] = simulate(createCustomStrategy(customActionQueue), seed, opts);
     }
     return r;
-  }, [seed, saveEnergy, saveEnergyThreshold, customActionQueue, tradeRatioAmplitude]);
+  }, [seed, saveEnergy, saveEnergyThreshold, customActionQueue, tradeRatioAmplitude, scenarios, planetConfig]);
 
-  const active = ALL_SCENARIOS.find(s => s.id === activeScenario) || ALL_SCENARIOS[0];
+  const active = allScenarios.find(s => s.id === activeScenario) || allScenarios[0];
   const activeResult = results[activeScenario];
 
   const chartData = useMemo(() => {
@@ -155,11 +169,26 @@ function App() {
           {theme === 'dark' ? '☀' : '☾'}
         </button>
         <h1 className="text-3xl font-bold bg-gradient-to-br from-[var(--color-accent)] to-violet-500 bg-clip-text text-transparent mb-1">
-          Colony Simulator — Metal Planet
+          Colony Simulator — {planetConfig.label} Planet
         </h1>
         <p className="text-[var(--color-muted)] text-sm">
-          Season 0 — 7-day timeline — 4 strategies compared
+          Season 0 — 7-day timeline — 5 strategies compared
         </p>
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
+          {Object.values(PLANET_TYPES).map(pt => (
+            <button
+              key={pt.id}
+              onClick={() => setPlanetType(pt.id)}
+              className={`px-3 py-1 rounded-md text-[0.85rem] cursor-pointer transition-all duration-200 border ${
+                planetType === pt.id
+                  ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white font-medium'
+                  : 'bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-inset)] hover:border-[var(--color-border-hover)]'
+              }`}
+            >
+              {pt.label}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap items-center justify-center gap-4 mt-3">
           <div className="flex items-center gap-2">
             <label className="text-[var(--color-muted)] text-[0.85rem]">RNG Seed:</label>
@@ -243,7 +272,7 @@ function App() {
       <ScoreCard />
 
       <ScenarioSelector
-        scenarios={ALL_SCENARIOS}
+        scenarios={allScenarios}
         active={activeScenario}
         onSelect={setActiveScenario}
         results={results}
