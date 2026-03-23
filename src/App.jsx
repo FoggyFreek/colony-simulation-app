@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { simulate } from './simulation/engine';
 import { getScenariosForPlanet } from './simulation/strategies';
 import { SEASON_HOURS, TRADE_RATIO_AMPLITUDE, TRADE_RATIO_CENTER, PLANET_TYPES } from './simulation/gameConstants';
 import { createCustomStrategy } from './simulation/customStrategy';
+import { getNextFriday16 } from './simulation/agendaUtils';
 import TimelineChart from './components/TimelineChart';
 import ActionLog from './components/ActionLog';
 import AgendaExport from './components/AgendaExport';
@@ -102,6 +103,7 @@ function App() {
   const [starPrice, setStarPrice] = useState('0.09');
   const [solPrice, setSolPrice] = useState('94');
   const [tradeRatioAmplitude, setTradeRatioAmplitude] = useState(TRADE_RATIO_AMPLITUDE);
+  const [seasonStart, setSeasonStart] = useState(() => getNextFriday16());
   const [customActionQueue, setCustomActionQueue] = useState(() => {
     try {
       const saved = localStorage.getItem('colony-custom-queue');
@@ -116,6 +118,22 @@ function App() {
   useEffect(() => {
     localStorage.setItem('colony-planet', planetType);
   }, [planetType]);
+
+  const [currentHour, setCurrentHour] = useState(null);
+
+  useEffect(() => {
+    const update = () => {
+      const elapsed = (Date.now() - seasonStart.getTime()) / (1000 * 60 * 60);
+      if (elapsed >= 0 && elapsed <= SEASON_HOURS) {
+        setCurrentHour(Math.floor(elapsed));
+      } else {
+        setCurrentHour(null);
+      }
+    };
+    update();
+    const interval = setInterval(update, 60000);
+    return () => clearInterval(interval);
+  }, [seasonStart]);
 
   const planetConfig = PLANET_TYPES[planetType];
   const scenarios = useMemo(() => getScenariosForPlanet(planetConfig), [planetConfig]);
@@ -311,7 +329,7 @@ function App() {
                 return (
                   <div key={panel.title} className={CHART_CARD_CLASS}>
                     <h3 className="text-sm text-[var(--color-muted)] mb-3">{panel.title}</h3>
-                    <TimelineChart data={chartData} lines={panel.lines} yLabel={panel.yLabel} stacked={panel.stacked} />
+                    <TimelineChart data={chartData} lines={panel.lines} yLabel={panel.yLabel} stacked={panel.stacked} currentHour={currentHour} />
                     {isTradeRatios && (
                       <div className="flex flex-wrap items-center gap-3 mt-3">
                         <label className="text-xs text-[var(--color-muted)]">Amplitude:</label>
@@ -371,6 +389,7 @@ function App() {
                   ]}
                   yLabel="Resources"
                   bar
+                  currentHour={currentHour}
                 />
               </div>
             </div>
@@ -383,6 +402,8 @@ function App() {
               miningByHour={activeResult.miningByHour}
               scenario={active}
               saveEnergy={saveEnergy}
+              seasonStart={seasonStart}
+              setSeasonStart={setSeasonStart}
             />
           </>
         )}

@@ -1,6 +1,6 @@
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 
 function formatNumber(val) {
@@ -29,7 +29,14 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-export default function TimelineChart({ data, lines, yLabel, stacked, bar }) {
+const NOW_LINE_PROPS = {
+  stroke: '#717171',
+  strokeDasharray: '4 3',
+  strokeWidth: 1.5,
+  label: { value: 'Now', position: 'top', fill: '#22d3ee', fontSize: 10 },
+};
+
+export default function TimelineChart({ data, lines, yLabel, stacked, bar, currentHour }) {
   if (bar) {
     return (
       <ResponsiveContainer width="100%" height={250}>
@@ -49,6 +56,7 @@ export default function TimelineChart({ data, lines, yLabel, stacked, bar }) {
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
+          {currentHour != null && <ReferenceLine x={currentHour} {...NOW_LINE_PROPS} />}
           {lines.map(l => (
             <Bar key={l.key} dataKey={l.key} stackId="1" fill={l.color} name={l.name} />
           ))}
@@ -64,6 +72,8 @@ export default function TimelineChart({ data, lines, yLabel, stacked, bar }) {
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-grid-stroke)" />
           <XAxis
             dataKey="hour"
+            type="number"
+            domain={[0, 'dataMax']}
             stroke="var(--color-axis-stroke)"
             tick={{ fill: 'var(--color-axis-tick)', fontSize: 11 }}
             label={{ value: 'Hours', position: 'insideBottom', offset: -2, fill: 'var(--color-axis-tick)', fontSize: 11 }}
@@ -76,6 +86,7 @@ export default function TimelineChart({ data, lines, yLabel, stacked, bar }) {
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
+          {currentHour != null && <ReferenceLine x={currentHour} {...NOW_LINE_PROPS} />}
           {lines.map(l => (
             <Area
               key={l.key}
@@ -101,6 +112,8 @@ export default function TimelineChart({ data, lines, yLabel, stacked, bar }) {
         <CartesianGrid strokeDasharray="3 3" stroke="var(--color-grid-stroke)" />
         <XAxis
           dataKey="hour"
+          type="number"
+          domain={[0, 'dataMax']}
           stroke="var(--color-axis-stroke)"
           tick={{ fill: 'var(--color-axis-tick)', fontSize: 11 }}
           label={{ value: 'Hours', position: 'insideBottom', offset: -2, fill: 'var(--color-axis-tick)', fontSize: 11 }}
@@ -113,6 +126,7 @@ export default function TimelineChart({ data, lines, yLabel, stacked, bar }) {
         />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
+        {currentHour != null && <ReferenceLine x={currentHour} {...NOW_LINE_PROPS} />}
         {lines.map(l => (
           <Line
             key={l.key}
