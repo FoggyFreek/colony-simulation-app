@@ -6,7 +6,7 @@ function formatNumber(val) {
 
 import { getTier } from '../simulation/gameConstants';
 
-export default function ScenarioCard({ scenario, isActive, result, maxPoints, maxStardust, maxSol, maxUsd, maxActions, starPrice, solPrice, onClick }) {
+export default function ScenarioCard({ scenario, isActive, result, maxPoints, maxStardust, maxSol, maxUsd, maxActions, starPrice, solPrice, onClick, sleepPenalty }) {
   const pts = result?.finalState?.leaderboardPoints;
   const sd = result?.finalState?.totalStardust;
   const pct = (pts && maxPoints) ? (pts / maxPoints) * 100 : 0;
@@ -51,6 +51,11 @@ export default function ScenarioCard({ scenario, isActive, result, maxPoints, ma
           )}
           <div className="text-[1.4rem] font-bold mb-1" style={{ color: scenario.color }}>
             {formatNumber(pts)} pts
+            {sleepPenalty != null && sleepPenalty !== 0 && (
+              <span className={`text-[0.65rem] font-semibold ml-1 ${sleepPenalty < 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                {sleepPenalty < 0 ? '' : '+'}{formatNumber(sleepPenalty)}
+              </span>
+            )}
           </div>
           <div className="h-1.5 bg-[var(--color-inset)] rounded-full overflow-hidden mb-2">
             <div

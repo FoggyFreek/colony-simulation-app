@@ -2,10 +2,10 @@ import { useState, useMemo, useCallback } from 'react';
 import { buildAgenda, formatAgendaAsText, formatAgendaAsICS, formatDayHeader } from '../simulation/agendaUtils';
 import ActionIcon from './ActionIcon';
 
-export default function AgendaExport({ actionLog, timeline, miningByHour = [], scenario, saveEnergy, seasonStart, setSeasonStart }) {
-  const [awakeEnabled, setAwakeEnabled] = useState(true);
-  const [awakeStart, setAwakeStart] = useState(7);
-  const [awakeEnd, setAwakeEnd] = useState(23);
+export default function AgendaExport({
+  actionLog, timeline, miningByHour = [], scenario, saveEnergy, seasonStart, setSeasonStart,
+  awakeEnabled, awakeStart, awakeEnd, setAwakeEnabled, setAwakeStart, setAwakeEnd,
+}) {
   const [copied, setCopied] = useState(false);
 
   const awakeConfig = useMemo(() => ({

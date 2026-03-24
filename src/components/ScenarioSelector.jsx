@@ -3,7 +3,7 @@ import { getTier } from '../simulation/gameConstants';
 
 const GRID = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3";
 
-export default function ScenarioSelector({ scenarios, active, onSelect, results, starPrice, solPrice }) {
+export default function ScenarioSelector({ scenarios, active, onSelect, results, starPrice, solPrice, unrestrictedResults }) {
   const validScenarios = scenarios.filter(s => results[s.id]);
   const maxPoints = validScenarios.length
     ? Math.max(...validScenarios.map(s => results[s.id].finalState.leaderboardPoints))
@@ -47,6 +47,9 @@ export default function ScenarioSelector({ scenarios, active, onSelect, results,
             starPrice={starPrice}
             solPrice={solPrice}
             onClick={() => onSelect(s.id)}
+            sleepPenalty={unrestrictedResults && results[s.id] && unrestrictedResults[s.id]
+              ? results[s.id].finalState.leaderboardPoints - unrestrictedResults[s.id].finalState.leaderboardPoints
+              : null}
           />
         ))}
       </div>

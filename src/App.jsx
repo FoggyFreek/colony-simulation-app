@@ -104,6 +104,9 @@ function App() {
   const [solPrice, setSolPrice] = useState('94');
   const [tradeRatioAmplitude, setTradeRatioAmplitude] = useState(TRADE_RATIO_AMPLITUDE);
   const [seasonStart, setSeasonStart] = useState(() => getNextFriday16());
+  const [restrictToAwakeHours, setRestrictToAwakeHours] = useState(false);
+  const [awakeStart, setAwakeStart] = useState(7);
+  const [awakeEnd, setAwakeEnd] = useState(0);
   const [customActionQueue, setCustomActionQueue] = useState(() => {
     try {
       const saved = localStorage.getItem('colony-custom-queue');
@@ -151,8 +154,14 @@ function App() {
 
   const allScenarios = useMemo(() => [...scenarios, CUSTOM_SCENARIO], [scenarios]);
 
+  const seasonStartHour = seasonStart.getHours();
+
   const results = useMemo(() => {
-    const opts = { saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude, saveEnergyThreshold, baseProduction: planetConfig.baseProduction };
+    const opts = {
+      saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude, saveEnergyThreshold,
+      baseProduction: planetConfig.baseProduction,
+      restrictToAwakeHours, awakeStart, awakeEnd, seasonStartHour,
+    };
     const r = {};
     for (const scenario of scenarios) {
       r[scenario.id] = simulate(scenario.strategy, seed, opts);
@@ -161,7 +170,24 @@ function App() {
       r['custom'] = simulate(createCustomStrategy(customActionQueue), seed, opts);
     }
     return r;
-  }, [seed, saveEnergy, saveEnergyThreshold, customActionQueue, tradeRatioAmplitude, scenarios, planetConfig]);
+  }, [seed, saveEnergy, saveEnergyThreshold, customActionQueue, tradeRatioAmplitude, scenarios, planetConfig, restrictToAwakeHours, awakeStart, awakeEnd, seasonStartHour]);
+
+  // Unrestricted baseline for showing sleep penalty
+  const unrestrictedResults = useMemo(() => {
+    if (!restrictToAwakeHours) return null;
+    const opts = {
+      saveEnergyBeforeUpgrade: saveEnergy, tradeRatioAmplitude, saveEnergyThreshold,
+      baseProduction: planetConfig.baseProduction,
+    };
+    const r = {};
+    for (const scenario of scenarios) {
+      r[scenario.id] = simulate(scenario.strategy, seed, opts);
+    }
+    if (customActionQueue.length > 0) {
+      r['custom'] = simulate(createCustomStrategy(customActionQueue), seed, opts);
+    }
+    return r;
+  }, [restrictToAwakeHours, seed, saveEnergy, saveEnergyThreshold, customActionQueue, tradeRatioAmplitude, scenarios, planetConfig]);
 
   const active = allScenarios.find(s => s.id === activeScenario) || allScenarios[0];
   const activeResult = results[activeScenario];
@@ -285,6 +311,51 @@ function App() {
             Skip mining before metal upgrades, then mine at higher production rate
           </span>
         </div>
+        <div className="flex flex-col items-center gap-1 mt-2">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2.5 cursor-pointer text-sm text-[var(--color-text)] select-none">
+              <input
+                type="checkbox"
+                checked={restrictToAwakeHours}
+                onChange={e => setRestrictToAwakeHours(e.target.checked)}
+                className="hidden"
+              />
+              <span className="toggle-switch" />
+              Restrict actions to awake hours
+            </label>
+            {restrictToAwakeHours && (
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+                  Wake
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={awakeStart}
+                    onChange={e => setAwakeStart(Number(e.target.value))}
+                    className="bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-1.5 py-0.5 rounded w-[50px] text-xs focus:outline-none focus:border-[var(--color-accent)]"
+                  />
+                  :00
+                </label>
+                <label className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+                  Sleep
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={awakeEnd}
+                    onChange={e => setAwakeEnd(Number(e.target.value))}
+                    className="bg-[var(--color-inset)] border border-[var(--color-border)] text-[var(--color-text)] px-1.5 py-0.5 rounded w-[50px] text-xs focus:outline-none focus:border-[var(--color-accent)]"
+                  />
+                  :00
+                </label>
+              </div>
+            )}
+          </div>
+          <span className="text-xs text-[var(--color-faint)]">
+            No mining or upgrades during sleep — actions delayed until wake-up
+          </span>
+        </div>
       </header>
 
       <ScoreCard />
@@ -296,6 +367,7 @@ function App() {
         results={results}
         starPrice={starPrice}
         solPrice={solPrice}
+        unrestrictedResults={unrestrictedResults}
       />
 
 <section className="mb-10">
@@ -311,7 +383,15 @@ function App() {
         )}
 
         {activeResult ? (
-          <FinalSummary result={activeResult} scenario={active} starPrice={starPrice} solPrice={solPrice} />
+          <FinalSummary
+            result={activeResult}
+            scenario={active}
+            starPrice={starPrice}
+            solPrice={solPrice}
+            sleepPenalty={unrestrictedResults && unrestrictedResults[activeScenario]
+              ? activeResult.finalState.leaderboardPoints - unrestrictedResults[activeScenario].finalState.leaderboardPoints
+              : null}
+          />
         ) : (
           <div className="text-[var(--color-faint)] text-[0.85rem] text-center py-4 mb-6">
             Add actions to your custom strategy to see results.
@@ -404,6 +484,12 @@ function App() {
               saveEnergy={saveEnergy}
               seasonStart={seasonStart}
               setSeasonStart={setSeasonStart}
+              awakeEnabled={restrictToAwakeHours}
+              awakeStart={awakeStart}
+              awakeEnd={awakeEnd}
+              setAwakeEnabled={setRestrictToAwakeHours}
+              setAwakeStart={setAwakeStart}
+              setAwakeEnd={setAwakeEnd}
             />
           </>
         )}

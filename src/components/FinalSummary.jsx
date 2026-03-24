@@ -8,7 +8,7 @@ function formatNumber(val) {
 }
 
 
-export default function FinalSummary({ result, scenario, starPrice, solPrice }) {
+export default function FinalSummary({ result, scenario, starPrice, solPrice, sleepPenalty }) {
   const { finalState } = result;
   const tier = getTier(finalState.leaderboardPoints);
   const buildingSummary = Object.entries(finalState.buildings)
@@ -27,6 +27,11 @@ export default function FinalSummary({ result, scenario, starPrice, solPrice }) 
           <span className={`${tier.cls} inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ml-2`}>{tier.name}</span>
         </div>
         <div className="text-xs text-[var(--color-faint)] mt-0.5">{tier.pct}</div>
+        {sleepPenalty != null && sleepPenalty !== 0 && (
+          <div className={`text-xs font-semibold mt-1 ${sleepPenalty < 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+            {sleepPenalty < 0 ? '' : '+'}{formatNumber(sleepPenalty)} LP from sleep ({((sleepPenalty / (finalState.leaderboardPoints - sleepPenalty)) * 100).toFixed(1)}%)
+          </div>
+        )}
       </div>
       <div className={cardBase}>
         <div className="text-xs text-[var(--color-muted)] uppercase tracking-wide mb-1">Stardust Earned</div>

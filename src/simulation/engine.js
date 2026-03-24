@@ -54,8 +54,24 @@ function cloneBuildings(buildings) {
   };
 }
 
+// Check if a simulation hour falls during sleep (player cannot act).
+// seasonStartHour is the wall-clock hour (0-23) when the season begins.
+function isSimHourAsleep(simHour, seasonStartHour, awakeStart, awakeEnd) {
+  const wallClock = (seasonStartHour + simHour) % 24;
+  if (awakeStart <= awakeEnd) {
+    // Normal range: e.g. awake 7-23
+    return !(wallClock >= awakeStart && wallClock < awakeEnd);
+  }
+  // Wrapping range: e.g. awake 22-6 (overnight workers)
+  return !(wallClock >= awakeStart || wallClock < awakeEnd);
+}
+
 export function simulate(strategy, seed = 42, options = {}) {
-  const { saveEnergyBeforeUpgrade = false, tradeRatioAmplitude = TRADE_RATIO_AMPLITUDE, saveEnergyThreshold = 10, baseProduction } = options;
+  const {
+    saveEnergyBeforeUpgrade = false, tradeRatioAmplitude = TRADE_RATIO_AMPLITUDE,
+    saveEnergyThreshold = 10, baseProduction,
+    restrictToAwakeHours = false, awakeStart = 7, awakeEnd = 0, seasonStartHour = 16,
+  } = options;
   const baseProd = baseProduction || BASE_PRODUCTION;
   const rand = seededRandom(seed);
   const tradeRatios = generateTradeRatios(seed, SEASON_HOURS, tradeRatioAmplitude);
@@ -385,6 +401,9 @@ export function simulate(strategy, seed = 42, options = {}) {
   const initialActions = strategy(0, { ...resources }, cloneBuildings(buildings), production, getTotalBuildingCount());
   executeActions(initialActions, 0);
 
+  // Track sleep state for wake-up detection
+  let wasSleeping = false;
+
   // Simulate each hour
   for (let hour = 1; hour <= SEASON_HOURS; hour++) {
     hourMiningMetals = 0;
@@ -392,7 +411,7 @@ export function simulate(strategy, seed = 42, options = {}) {
     hourMiningCrystal = 0;
     hourMiningResource = null;
     hourMiningActions = 0;
-    // 1. Produce resources
+    // 1. Produce resources (always — production is passive)
     resources.metals += production.metals;
     resources.gas += production.gas;
     resources.crystal += production.crystal;
@@ -410,11 +429,27 @@ export function simulate(strategy, seed = 42, options = {}) {
     productionPoints += hourlyResourcePts;
     stardustPoints += hourlyStardustPts;
 
-    // 2. Regenerate energy
+    // 2. Regenerate energy (always — passive)
     energy = Math.min(MAX_ENERGY, energy + ENERGY_PER_HOUR);
 
-    // 3 & 4. Mining + Strategy (order depends on saveEnergyBeforeUpgrade mode)
-    if (saveEnergyBeforeUpgrade) {
+    // 3 & 4. Mining + Strategy — skipped during sleep hours
+    const sleeping = restrictToAwakeHours && isSimHourAsleep(hour, seasonStartHour, awakeStart, awakeEnd);
+    const isWakeUp = restrictToAwakeHours && !sleeping && wasSleeping;
+    wasSleeping = sleeping;
+
+    if (sleeping) {
+      // Player is asleep: no mining, no upgrades/builds
+    } else if (isWakeUp) {
+      // Wake-up: mine with accumulated energy, then catch up on affordable upgrades
+      doMining(hour);
+      for (let i = 0; i < 20; i++) {
+        const stratActions = strategy(hour, { ...resources }, cloneBuildings(buildings), production, getTotalBuildingCount());
+        if (!stratActions || stratActions.length === 0) break;
+        const prevPoints = leaderboardPoints;
+        executeActions(stratActions, hour);
+        if (leaderboardPoints === prevPoints) break; // action didn't execute (can't afford)
+      }
+    } else if (saveEnergyBeforeUpgrade) {
       // Strategy FIRST so upgrades happen before mining (higher production = better mining)
       const stratActions = strategy(hour, { ...resources }, cloneBuildings(buildings), production, getTotalBuildingCount());
       const shouldSkipMining = shouldSaveEnergy(stratActions, resources, production);
